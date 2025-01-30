@@ -87,34 +87,6 @@ pub mod voting_sys {
 
         Ok(())
     }
-
-//     pub fn get_election_results(ctx: Context<GetResults>) -> Result<Vec<ElectionResults>> {
-//         let election = &ctx.accounts.election_data;
-//         require!(election.stage == ElectionStage::Closed, VotingError::InvalidStage);
-        
-//         let mut results = Vec::new();
-//         for candidate_name in &election.candidate_whitelist {
-//             let (candidate_account, _) = Pubkey::find_program_address(
-//                 &[
-//                     b"candidate",
-//                     election.to_account_info().key.as_ref(),
-//                     candidate_name.as_bytes(),
-//                 ],
-//                 ctx.program_id,
-//             );
-            
-//             // Load candidate account directly
-//             if let Ok(candidate_info) = ctx.accounts.election_data.to_account_info().try_borrow_data() {
-//                 let candidate_data: CandidateData = AccountDeserialize::try_deserialize(&mut &candidate_info[..])?;
-//                 results.push(ElectionResults {
-//                     candidate_name: candidate_name.clone(),
-//                     votes: candidate_data.votes,
-//                 });
-//             }
-//         }
-        
-//         Ok(results)
-//     }
 }
 
 #[derive(Accounts)]
@@ -195,24 +167,8 @@ pub struct ElectionData {
     pub total_candidates: u64,
     pub voter_whitelist: Vec<String>,
     pub candidate_whitelist: Vec<String>,
-    //pub results: Vec<ElectionResults>,
 }
 
-// #[derive(Accounts)]
-// pub struct GetResults<'info> {
-//     pub election_data: Account<'info, ElectionData>,
-// }
-
-// impl<'info> GetResults<'info> {
-//     // Implement the get_account method
-//     pub fn get_account<T: AccountDeserialize>(&self, account: Pubkey) -> Result<T> {
-//         let account_info = self.election_data.to_account_info().key;
-//         if account_info != &account {
-//             return Err(VotingError::AccountNotFound.into());
-//         }
-//         T::try_deserialize(&mut &**self.election_data.to_account_info().data.borrow())
-//     }
-// }
 
 #[account]
 pub struct CandidateData {
@@ -238,12 +194,6 @@ pub enum ElectionStage {
     Voting,
     Closed,
 }
-
-// #[derive(AnchorSerialize, AnchorDeserialize, Clone)] // Implement Clone for ElectionResults
-// pub struct ElectionResults {
-//     pub candidate_name: String,
-//     pub votes: u64,
-// }
 
 #[error_code]
 pub enum VotingError {
