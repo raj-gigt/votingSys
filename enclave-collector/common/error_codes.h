@@ -1,0 +1,99 @@
+#ifndef ERROR_CODES_H
+#define ERROR_CODES_H
+
+#include "shared_types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Success code
+#define SUCCESS 0
+
+// General error codes (1-99)
+#define ERROR_GENERAL_FAILURE 1
+#define ERROR_INVALID_PARAMETER 2
+#define ERROR_NULL_POINTER 3
+#define ERROR_BUFFER_TOO_SMALL 4
+#define ERROR_OUT_OF_MEMORY 5
+#define ERROR_NOT_IMPLEMENTED 6
+#define ERROR_OPERATION_FAILED 7
+
+// Initialization errors (100-199)
+#define ERROR_ENCLAVE_NOT_INITIALIZED 100
+#define ERROR_ENCLAVE_ALREADY_INITIALIZED 101
+#define ERROR_INITIALIZATION_FAILED 102
+#define ERROR_CLEANUP_FAILED 103
+
+// Cryptographic errors (200-299)
+#define ERROR_CRYPTO_INIT_FAILED 200
+#define ERROR_KEY_GENERATION_FAILED 201
+#define ERROR_ENCRYPTION_FAILED 202
+#define ERROR_DECRYPTION_FAILED 203
+#define ERROR_SIGNATURE_FAILED 204
+#define ERROR_VERIFICATION_FAILED 205
+#define ERROR_INVALID_KEY 206
+#define ERROR_INVALID_SIGNATURE 207
+#define ERROR_HASH_FAILED 208
+
+// Vote processing errors (300-399)
+#define ERROR_INVALID_VOTE 300
+#define ERROR_VOTE_ALREADY_PROCESSED 301
+#define ERROR_VOTE_VERIFICATION_FAILED 302
+#define ERROR_INVALID_VOTER_ID 303
+#define ERROR_INVALID_CANDIDATE_ID 304
+#define ERROR_VOTE_EXPIRED 305
+#define ERROR_DUPLICATE_VOTE 306
+
+// Storage errors (400-499)
+#define ERROR_SEAL_FAILED 400
+#define ERROR_UNSEAL_FAILED 401
+#define ERROR_STORAGE_CORRUPTED 402
+#define ERROR_STORAGE_NOT_FOUND 403
+#define ERROR_STORAGE_WRITE_FAILED 404
+#define ERROR_STORAGE_READ_FAILED 405
+
+// Network/IO errors (500-599)
+#define ERROR_NETWORK_FAILED 500
+#define ERROR_FILE_NOT_FOUND 501
+#define ERROR_FILE_READ_FAILED 502
+#define ERROR_FILE_WRITE_FAILED 503
+#define ERROR_NETWORK_TIMEOUT 504
+#define ERROR_CONNECTION_FAILED 505
+
+// Attestation errors (600-699)
+#define ERROR_ATTESTATION_FAILED 600
+#define ERROR_QUOTE_GENERATION_FAILED 601
+#define ERROR_QUOTE_VERIFICATION_FAILED 602
+#define ERROR_CERTIFICATE_INVALID 603
+#define ERROR_PLATFORM_NOT_TRUSTED 604
+
+// Aggregation errors (700-799)
+#define ERROR_AGGREGATION_FAILED 700
+#define ERROR_INSUFFICIENT_VOTES 701
+#define ERROR_AGGREGATION_CORRUPTED 702
+#define ERROR_PROOF_GENERATION_FAILED 703
+#define ERROR_PROOF_VERIFICATION_FAILED 704
+
+// Big integer operation errors (800-899)
+#define ERROR_BIGINT_OVERFLOW 800
+#define ERROR_BIGINT_INVALID_OPERATION 801
+#define ERROR_BIGINT_DIVISION_BY_ZERO 802
+#define ERROR_BIGINT_CONVERSION_FAILED 803
+
+// Simulation mode errors (900-999)
+#define ERROR_SIMULATION_NOT_SUPPORTED 900
+#define ERROR_HARDWARE_FEATURE_REQUIRED 901
+#define ERROR_SIMULATION_CONFIGURATION_INVALID 902
+
+// Helper function to get error description (supports both old and new error codes)
+const char* get_error_description(int error_code);
+
+// Helper function to get enclave error description  
+const char* get_enclave_error_description(enclave_result_t error_code);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // ERROR_CODES_H

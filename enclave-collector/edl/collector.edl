@@ -1,0 +1,248 @@
+// Enclave Definition Language file for collector enclave
+
+enclave {
+    include "shared_types.h"
+    include "error_codes.h"
+    
+    trusted {
+        // Initialization and cleanup
+        public int ecall_initialize_collector(
+            [out] collector_state_t* state
+        );
+        
+        public int ecall_cleanup_collector(void);
+        
+        // Key management
+        public int ecall_generate_keys(
+            [out] key_pair_t* keys
+        );
+        
+        public int ecall_get_public_key(
+            [out, size=key_size] uint8_t* public_key,
+            [in, out] size_t* key_size
+        );
+        
+        // Vote processing
+        public int ecall_process_vote(
+            [in] const vote_t* vote,
+            [out] uint32_t* vote_id
+        );
+        
+        public int ecall_validate_vote(
+            [in] const vote_t* vote,
+            [out] int* is_valid
+        );
+        
+        public int ecall_batch_process_votes(
+            [in, count=vote_count] const vote_t* votes,
+            size_t vote_count,
+            [out, count=vote_count] uint32_t* vote_ids,
+            [out, count=vote_count] int* results
+        );
+        
+        // Cryptographic operations
+        public int ecall_encrypt_data(
+            [in, size=data_size] const uint8_t* plaintext,
+            size_t data_size,
+            [out] encrypted_data_t* encrypted
+        );
+        
+        public int ecall_decrypt_data(
+            [in] const encrypted_data_t* encrypted,
+            [out, size=buffer_size] uint8_t* plaintext,
+            [in, out] size_t* buffer_size
+        );
+        
+        public int ecall_sign_data(
+            [in, size=data_size] const uint8_t* data,
+            size_t data_size,
+            [out, size=sig_size] uint8_t* signature,
+            [in, out] size_t* sig_size
+        );
+        
+        public int ecall_verify_signature(
+            [in, size=data_size] const uint8_t* data,
+            size_t data_size,
+            [in, size=sig_size] const uint8_t* signature,
+            size_t sig_size,
+            [in, size=key_size] const uint8_t* public_key,
+            size_t key_size,
+            [out] int* is_valid
+        );
+        
+        // Big integer operations
+        public int ecall_bigint_add(
+            [in, size=a_size] const uint8_t* a,
+            size_t a_size,
+            [in, size=b_size] const uint8_t* b,
+            size_t b_size,
+            [out, size=result_size] uint8_t* result,
+            [in, out] size_t* result_size
+        );
+        
+        public int ecall_bigint_multiply(
+            [in, size=a_size] const uint8_t* a,
+            size_t a_size,
+            [in, size=b_size] const uint8_t* b,
+            size_t b_size,
+            [out, size=result_size] uint8_t* result,
+            [in, out] size_t* result_size
+        );
+        
+        public int ecall_bigint_modexp(
+            [in, size=base_size] const uint8_t* base,
+            size_t base_size,
+            [in, size=exp_size] const uint8_t* exponent,
+            size_t exp_size,
+            [in, size=mod_size] const uint8_t* modulus,
+            size_t mod_size,
+            [out, size=result_size] uint8_t* result,
+            [in, out] size_t* result_size
+        );
+        
+        // Vote aggregation
+        public int ecall_aggregate_votes(
+            [out] aggregation_summary_t* summary
+        );
+        
+        public int ecall_get_vote_count(
+            uint32_t candidate_id,
+            [out] uint64_t* count
+        );
+        
+        public int ecall_generate_aggregation_proof(
+            [in] const aggregation_summary_t* summary,
+            [out, size=proof_size] uint8_t* proof,
+            [in, out] size_t* proof_size
+        );
+        
+        // Secure storage
+        public int ecall_seal_data(
+            [in, size=data_size] const uint8_t* data,
+            size_t data_size,
+            [out] sealed_data_t* sealed
+        );
+        
+        public int ecall_unseal_data(
+            [in] const sealed_data_t* sealed,
+            [out, size=buffer_size] uint8_t* data,
+            [in, out] size_t* buffer_size
+        );
+        
+        // Attestation (when not in simulation mode)
+        public int ecall_generate_attestation_report(
+            [in, size=nonce_size] const uint8_t* nonce,
+            size_t nonce_size,
+            [out, size=report_size] uint8_t* report,
+            [in, out] size_t* report_size
+        );
+        
+        public int ecall_verify_enclave_identity(
+            [in, size=report_size] const uint8_t* report,
+            size_t report_size,
+            [out] int* is_valid
+        );
+        
+        // State management
+        public int ecall_get_collector_state(
+            [out] collector_state_t* state
+        );
+        
+        public int ecall_reset_collector(void);
+    };
+    
+    untrusted {
+        // File operations
+        int ocall_file_read(
+            [in, string] const char* filename,
+            [out, size=buffer_size] uint8_t* buffer,
+            [in, out] size_t* buffer_size
+        );
+        
+        int ocall_file_write(
+            [in, string] const char* filename,
+            [in, size=data_size] const uint8_t* data,
+            size_t data_size
+        );
+        
+        int ocall_file_append(
+            [in, string] const char* filename,
+            [in, size=data_size] const uint8_t* data,
+            size_t data_size
+        );
+        
+        int ocall_file_delete(
+            [in, string] const char* filename
+        );
+        
+        int ocall_file_exists(
+            [in, string] const char* filename,
+            [out] int* exists
+        );
+        
+        // Network operations
+        int ocall_network_send(
+            [in, string] const char* host,
+            int port,
+            [in, size=data_size] const uint8_t* data,
+            size_t data_size,
+            [out, size=response_size] uint8_t* response,
+            [in, out] size_t* response_size
+        );
+        
+        int ocall_network_receive(
+            int port,
+            [out, size=buffer_size] uint8_t* buffer,
+            [in, out] size_t* buffer_size,
+            int timeout_ms
+        );
+        
+        // Logging
+        void ocall_log_message(
+            int level,
+            [in, string] const char* message
+        );
+        
+        void ocall_log_error(
+            int error_code,
+            [in, string] const char* context
+        );
+        
+        // System operations
+        uint64_t ocall_get_timestamp(void);
+        
+        int ocall_get_random_bytes(
+            [out, size=size] uint8_t* buffer,
+            size_t size
+        );
+        
+        void* ocall_allocate_memory(size_t size);
+        
+        void ocall_free_memory([user_check] void* ptr);
+        
+        // Database operations (if using external database)
+        int ocall_database_query(
+            [in, string] const char* query,
+            [out, size=result_size] uint8_t* result,
+            [in, out] size_t* result_size
+        );
+        
+        int ocall_database_store_vote(
+            [in] const vote_t* vote,
+            uint32_t vote_id
+        );
+        
+        // Backup and recovery
+        int ocall_backup_state(
+            [in, size=state_size] const uint8_t* state_data,
+            size_t state_size,
+            [in, string] const char* backup_id
+        );
+        
+        int ocall_restore_state(
+            [in, string] const char* backup_id,
+            [out, size=buffer_size] uint8_t* state_data,
+            [in, out] size_t* buffer_size
+        );
+    };
+};
