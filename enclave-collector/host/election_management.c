@@ -2,6 +2,7 @@
 #include "api_client.h"
 #include "logging.h"
 #include "constants.h"
+#include "shared_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

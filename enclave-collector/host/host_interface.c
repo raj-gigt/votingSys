@@ -1,8 +1,10 @@
 #include "host_interface.h"
+#include "crypto_processor.h"
 #include "logging.h"
 #include "file_operations.h"
 #include "network_interface.h"
 #include "api_client.h"
+#include "config_manager.h"
 #include "constants.h"
 
 #include <stdio.h>
@@ -34,39 +36,47 @@ collector_state_t g_sim_state;
 key_pair_t g_sim_keys;
 // Note: No more static election parameters or keys - these come from external API
 
+// Global crypto processor for secure mathematical operations
+static crypto_processor_t g_crypto_processor = {0};
+
 // Initialize host interface
-int host_initialize(host_context_t* context) {
+enclave_result_t host_initialize(host_context_t* context) {
     if (!context) {
-        return ERROR_NULL_POINTER;
+        return ENCLAVE_ERROR_NULL_POINTER;
     }
 
     log_info("Initializing host interface...");
 
     // Clear context
     memset(context, 0, sizeof(host_context_t));
-    context->session_id = (uint64_t)time(NULL);    // Initialize API client configuration
-    api_config_t* api_config = malloc(sizeof(api_config_t));
-    if (!api_config) {
-        log_error("Failed to allocate API configuration");
-        return ENCLAVE_ERROR_MEMORY_ALLOCATION;
+    context->session_id = (uint64_t)time(NULL);
+    
+    // Initialize configuration system first
+    enclave_result_t config_result = config_system_init("./config/enclave_config.json");
+    if (config_result != ENCLAVE_SUCCESS) {
+        log_warning("Failed to load config file, using environment and defaults: %s", 
+                   get_enclave_error_description(config_result));
+        // Continue with defaults - config_system_init handles fallbacks
     }
     
-    // Set default API configuration (should be loaded from config file)
-    strcpy(api_config->base_url, "http://localhost:3000");
-    strcpy(api_config->auth_token, ""); // Will be set from environment or config
-    api_config->timeout_ms = 30000;
-    api_config->max_retries = 3;
-    
-    context->api_config = api_config;
-    
-    // Initialize API client
-    enclave_result_t api_result = api_client_init(api_config);
-    if (api_result != ENCLAVE_SUCCESS) {
-        log_error("Failed to initialize API client: %s", get_enclave_error_description(api_result));
-        free(api_config);
-        context->api_config = NULL;
+    // Get current configuration
+    const system_config_t* system_config = config_get_current();
+    if (!system_config) {
+        log_error("Failed to get system configuration");
         return ERROR_GENERAL_FAILURE;
     }
+    
+    // Store API configuration reference in context (no need to allocate separately)
+    context->api_config = (api_config_t*)&system_config->api_config;
+    
+    // Initialize API client with current configuration
+    enclave_result_t api_result = api_client_init(&system_config->api_config);
+    if (api_result != ENCLAVE_SUCCESS) {
+        log_error("Failed to initialize API client: %s", get_enclave_error_description(api_result));
+        return ERROR_GENERAL_FAILURE;
+    }
+
+    log_info("API client initialized with base URL: %s", config_get_api_base_url());
 
     // Initialize file operations
     int result = file_operations_init(&context->config);
@@ -99,22 +109,31 @@ int host_initialize(host_context_t* context) {
             log_error("Failed to initialize enclave: %s", get_error_description(result));
             host_destroy_enclave(context);
             return result;
-        }
-    }
+        }    }
 #endif
 
-    context->is_initialized = 1;
-    log_info("Host interface initialized successfully");
-    return SUCCESS;
+    // Initialize the crypto processor for secure mathematical operations
+    int crypto_result = crypto_processor_init(&g_crypto_processor, context);
+    if (crypto_result != SUCCESS) {
+        log_error("Failed to initialize crypto processor: %s", get_error_description(crypto_result));
+        return crypto_result;
+    }
+      context->is_initialized = 1;
+    log_info("Host interface initialized successfully with crypto processor");
+    log_info("Ready to process auxiliary values: aux_i = pk_A^sk_i = H()^(sk_A * sk_i)");
+    return ENCLAVE_SUCCESS;
 }
 
 // Cleanup host interface
-int host_cleanup(host_context_t* context) {
+enclave_result_t host_cleanup(host_context_t* context) {
     if (!context || !context->is_initialized) {
-        return ERROR_ENCLAVE_NOT_INITIALIZED;
+        return ENCLAVE_ERROR_NOT_INITIALIZED;
     }
 
     log_info("Cleaning up host interface...");
+
+    // Cleanup crypto processor first
+    crypto_processor_cleanup(&g_crypto_processor);
 
 #ifndef SIMULATION_MODE
     if (!context->config.simulation_mode && context->enclave_handle) {
@@ -123,11 +142,9 @@ int host_cleanup(host_context_t* context) {
 #endif
 
     // Cleanup file operations
-    file_operations_cleanup();
-
-    context->is_initialized = 0;
+    file_operations_cleanup();    context->is_initialized = 0;
     log_info("Host interface cleaned up");
-    return SUCCESS;
+    return ENCLAVE_SUCCESS;
 }
 
 #ifndef SIMULATION_MODE
@@ -355,40 +372,50 @@ int host_handle_vote_submission(host_context_t* context, const vote_t* vote, uin
 #endif
 }
 
-// Handle aggregation request
+// Handle aggregation request - now with crypto processor integration
 int host_handle_aggregation_request(host_context_t* context, aggregation_summary_t* summary) {
     if (!context || !summary) {
         return ERROR_NULL_POINTER;
     }
 
-    log_info("Processing vote aggregation request");
+    log_info("Processing cryptographic aggregation request");
+    log_info("Computing: aux = ∏(i=1 to n) aux_i = H()^(sk_A * Σ(i=1 to n) sk_i)");
 
-#ifdef SIMULATION_MODE
-    return sim_aggregate_votes(summary);
-#else
-    if (context->config.simulation_mode) {
-        return sim_aggregate_votes(summary);
+    // Use the crypto processor to compute final aggregation
+    aggregation_result_t crypto_result;
+    int result = crypto_compute_final_aggregation(&g_crypto_processor, &crypto_result);
+    
+    if (result != SUCCESS) {
+        log_error("Failed to compute cryptographic aggregation: %s", get_error_description(result));
+        return result;
     }
 
-#ifdef OE_BUILD_ENCLAVE
-    oe_result_t result = OE_OK;
-    int ecall_result = ERROR_GENERAL_FAILURE;
-
-    result = ecall_aggregate_votes(
-        (oe_enclave_t*)context->enclave_handle,
-        &ecall_result,
-        summary);
-
-    if (result != OE_OK) {
-        log_error("ECALL failed: %s", oe_result_str(result));
-        return ERROR_OPERATION_FAILED;
+    // Convert crypto result to summary format
+    summary->candidate_count = 1; // For now, we have one aggregated result
+    summary->total_votes_counted = crypto_result.total_users;
+    
+    // Fill in the first result with our aggregated data
+    if (summary->candidate_count > 0) {
+        summary->results[0].candidate_id = 1; // Placeholder candidate ID
+        summary->results[0].vote_count = crypto_result.total_users;
+    }
+    
+    // Copy aggregation proof
+    summary->proof_size = sizeof(crypto_result.aggregation_proof);
+    if (summary->proof_size <= MAX_SIGNATURE_SIZE) {
+        memcpy(summary->aggregation_proof, crypto_result.aggregation_proof, summary->proof_size);
+    } else {
+        summary->proof_size = MAX_SIGNATURE_SIZE;
+        memcpy(summary->aggregation_proof, crypto_result.aggregation_proof, MAX_SIGNATURE_SIZE);
     }
 
-    return ecall_result;
-#else
-    return ERROR_NOT_IMPLEMENTED;
-#endif
-#endif
+    log_info("Cryptographic aggregation completed successfully");
+    log_info("Final result: aux computed from %d auxiliary values", crypto_result.total_users);    // Post result to backend API
+    enclave_result_t post_result = post_aggregation_to_backend(context, &crypto_result);
+    if (post_result != ENCLAVE_SUCCESS) {
+        log_warning("Failed to post aggregation to backend: %s", get_enclave_error_description(post_result));
+        // Don't fail the aggregation request even if backend posting fails
+    }return SUCCESS;
 }
 
 // Handle status request
@@ -429,10 +456,152 @@ int host_handle_status_request(host_context_t* context, collector_state_t* state
 #endif
 }
 
-// Process pending requests (stub for network integration)
+// Process pending requests - now with real-time API fetching and crypto operations
 int host_process_pending_requests(host_context_t* context) {
-    // This would be implemented to work with the network interface
-    // to process queued requests from clients
+    if (!context) {
+        return ERROR_NULL_POINTER;
+    }
+
+    // Check if we have a network context available
+    if (!context->network_context) {
+        return ERROR_NO_DATA; // No network to process
+    }
+
+    log_debug("Processing pending requests from API endpoints...");
+    
+    // Real-time implementation: Fetch auxiliary values from backend API
+    api_auxiliary_value_t* api_aux_values = NULL;
+    size_t aux_count = 0;
+    
+    // Step 1: Fetch auxiliary values from /api/collector/fetch-auxiliary
+    enclave_result_t fetch_result = api_fetch_auxiliary_values_realtime(&api_aux_values, &aux_count);
+    if (fetch_result != ENCLAVE_SUCCESS) {
+        log_error("Failed to fetch auxiliary values from API: %s", get_enclave_error_description(fetch_result));
+        return ERROR_OPERATION_FAILED;
+    }
+    
+    if (aux_count == 0) {
+        log_debug("No auxiliary values available from API");
+        return SUCCESS; // No data to process
+    }
+    
+    log_info("Fetched %zu auxiliary values from API for processing", aux_count);
+    
+    // Step 2: Process each auxiliary value through crypto operations
+    int processed_count = 0;
+    for (size_t i = 0; i < aux_count; i++) {
+        // Convert API auxiliary value to crypto auxiliary value format
+        auxiliary_value_t crypto_aux;
+        memset(&crypto_aux, 0, sizeof(crypto_aux));
+        
+        // Parse voter ID from string to user_id (for crypto processor compatibility)
+        crypto_aux.user_id = (uint32_t)(i + 1); // Use index as user ID for now
+        crypto_aux.timestamp = (uint64_t)time(NULL);
+          // Convert hex string to binary data for crypto processing
+        uint8_t* binary_data = NULL;
+        size_t binary_len = 0;
+        
+        int conv_result = hex_to_binary(api_aux_values[i].aux_value, &binary_data, &binary_len);
+        if (conv_result == SUCCESS && binary_data) {
+            crypto_aux.aux_i.data = binary_data;
+            crypto_aux.aux_i.length = binary_len;
+            
+            // Generate signature (in production this would come from the client)
+            memset(crypto_aux.signature, (i + 1) * 0x11, sizeof(crypto_aux.signature));
+            
+            // Step 3: Process through crypto processor for secure aggregation
+            int crypto_result = crypto_process_auxiliary_value(&g_crypto_processor, &crypto_aux);
+            if (crypto_result == SUCCESS) {
+                processed_count++;
+                log_info("Successfully processed auxiliary value %zu from voter: %s", 
+                        i + 1, api_aux_values[i].voter_id);
+            } else {
+                log_warning("Failed to process auxiliary value %zu: %s", 
+                           i + 1, get_error_description(crypto_result));
+            }
+            
+            free(binary_data);
+        } else {
+            log_error("Failed to convert hex auxiliary value to binary for voter: %s", 
+                     api_aux_values[i].voter_id);
+        }
+    }
+    
+    log_info("Real-time processing complete: %d/%zu auxiliary values processed successfully", 
+             processed_count, aux_count);
+    
+    // Step 4: If we have processed values, compute and submit final aggregation
+    if (processed_count > 0) {
+        aggregation_result_t aggregation;
+        memset(&aggregation, 0, sizeof(aggregation));
+        
+        int agg_result = crypto_compute_final_aggregation(&g_crypto_processor, &aggregation);
+        if (agg_result == SUCCESS) {
+            log_info("Successfully computed final aggregation result");
+            
+            // Convert binary result to hex string for API submission
+            char product_hex[2048] = {0};
+            if (aggregation.final_aux.length > 0 && aggregation.final_aux.data) {
+                for (size_t i = 0; i < aggregation.final_aux.length && i < 1023; i++) {
+                    snprintf(&product_hex[i * 2], 3, "%02x", 
+                            ((uint8_t*)aggregation.final_aux.data)[i]);
+                }
+                
+                // Step 5: Submit aggregation result to /api/collector/aux
+                enclave_result_t submit_result = api_submit_aux_product(product_hex);
+                if (submit_result == ENCLAVE_SUCCESS) {
+                    log_info("Successfully submitted aggregation result to backend API");
+                } else {
+                    log_error("Failed to submit aggregation result: %s", 
+                             get_enclave_error_description(submit_result));
+                }
+            } else {
+                log_warning("Invalid aggregation result - empty data");
+            }
+        } else {
+            log_error("Failed to compute final aggregation: %s", get_error_description(agg_result));
+        }
+    }
+    
+    // Clean up auxiliary values
+    if (api_aux_values) {
+        free(api_aux_values);
+    }
+    
+    return SUCCESS;
+}
+
+// Perform maintenance tasks - new implementation
+int host_perform_maintenance(host_context_t* context) {
+    if (!context) {
+        return ERROR_NULL_POINTER;
+    }
+    
+    static time_t last_maintenance = 0;
+    time_t current_time = time(NULL);
+    
+    // Run maintenance every 30 seconds
+    if (current_time - last_maintenance < 30) {
+        return SUCCESS;
+    }
+    
+    last_maintenance = current_time;
+    
+    log_debug("Performing periodic maintenance...");
+    
+    // Maintenance tasks:
+    // 1. Check enclave health
+    // 2. Clean up expired sessions
+    // 3. Verify cryptographic state integrity
+    // 4. Report status to backend API
+    
+    collector_state_t state;
+    if (host_handle_status_request(context, &state) == SUCCESS) {
+        log_info("Maintenance: Collector has %d total votes (%d valid, %d invalid), sealed: %s",
+                state.total_votes, state.valid_votes, state.invalid_votes,
+                state.is_sealed ? "yes" : "no");
+    }
+    
     return SUCCESS;
 }
 
@@ -444,27 +613,13 @@ int host_validate_request(const host_request_t* request) {
 
     if (request->payload_size > MAX_MESSAGE_SIZE) {
         return ERROR_BUFFER_TOO_SMALL;
-    }
-
-    // Check timestamp (within tolerance)
+    }    // Check timestamp (within tolerance)
     uint64_t now = get_timestamp_ms();
-    if (abs((long long)(now - request->timestamp)) > TIMESTAMP_TOLERANCE_MS) {
+    if (llabs((long long)(now - request->timestamp)) > TIMESTAMP_TOLERANCE_MS) {
         return ERROR_VOTE_EXPIRED;
     }
 
     return SUCCESS;
-}
-
-// Perform periodic maintenance
-void host_perform_maintenance(host_context_t* context) {
-    if (!context || !context->is_initialized) {
-        return;
-    }
-
-    log_debug("Performing periodic maintenance");
-
-    // Update statistics, cleanup old data, etc.
-    // Implementation would depend on specific requirements
 }
 
 // Get current timestamp in milliseconds
@@ -765,69 +920,7 @@ int sim_verify_signature(const uint8_t* data, size_t data_size, const uint8_t* s
 
 #endif // SIMULATION_MODE
 
-// New enclave_result_t API functions for integration tests
-
-// Initialize host interface with enclave_result_t return type
-enclave_result_t host_initialize(host_context_t* context) {
-    if (!context) {
-        return ENCLAVE_ERROR_INVALID_PARAMETER;
-    }
-
-    log_info("Initializing host interface...");
-
-    // Clear context
-    memset(context, 0, sizeof(host_context_t));
-    context->session_id = (uint64_t)time(NULL);
-
-    // Set default configuration for simulation mode
-    context->config.port = 8080;
-    context->config.log_level = 2; // INFO
-    context->config.max_connections = 10;
-    context->config.simulation_mode = 1;
-    strcpy(context->config.log_file, "logs/host.log");
-
-#ifdef SIMULATION_MODE
-    // Initialize simulation state
-    if (!g_sim_initialized) {
-        memset(&g_sim_state, 0, sizeof(collector_state_t));
-        memset(&g_sim_keys, 0, sizeof(key_pair_t));
-        
-        // Generate simulation keys
-        srand((unsigned int)time(NULL));
-        for (size_t i = 0; i < CRYPTO_KEY_SIZE; i++) {
-            g_sim_keys.private_key[i] = (uint8_t)(rand() % 256);
-            g_sim_keys.public_key[i] = (uint8_t)(rand() % 256);
-        }
-        g_sim_keys.private_key_size = CRYPTO_KEY_SIZE;
-        g_sim_keys.public_key_size = CRYPTO_KEY_SIZE;
-        
-        g_sim_initialized = 1;
-    }
-#endif
-
-    context->is_initialized = 1;
-    log_info("Host interface initialized successfully");
-    return ENCLAVE_SUCCESS;
-}
-
-// Cleanup host interface
-enclave_result_t host_cleanup(host_context_t* context) {
-    if (!context) {
-        return ENCLAVE_ERROR_INVALID_PARAMETER;
-    }
-
-    log_info("Cleaning up host interface...");
-    
-#ifdef SIMULATION_MODE
-    g_sim_initialized = 0;
-    memset(&g_sim_state, 0, sizeof(collector_state_t));
-    memset(&g_sim_keys, 0, sizeof(key_pair_t));
-#endif
-
-    context->is_initialized = 0;
-    log_info("Host interface cleaned up");
-    return ENCLAVE_SUCCESS;
-}
+// Note: Duplicate function definitions removed to fix compilation errors
 
 // Get enclave information
 enclave_result_t host_get_enclave_info(enclave_info_t* info) {
@@ -976,9 +1069,8 @@ enclave_result_t host_initialize_election(host_context_t* context, const char* e
     // Store current election ID
     strncpy(context->current_election_id, election_id, sizeof(context->current_election_id) - 1);
     context->current_election_id[sizeof(context->current_election_id) - 1] = '\0';
-    
-    // Fetch election parameters from external API
-    election_params_t params;
+      // Fetch election parameters from external API
+    crypto_params_t params;
     enclave_result_t result = api_fetch_election_params(election_id, &params);
     if (result != ENCLAVE_SUCCESS) {
         log_error("Failed to fetch election parameters: %s", get_enclave_error_description(result));
@@ -1022,11 +1114,10 @@ enclave_result_t host_process_auxiliary_values(host_context_t* context) {
     if (!context->is_initialized || strlen(context->current_election_id) == 0) {
         return ENCLAVE_ERROR_NOT_INITIALIZED;
     }
-    
-    log_info("Processing auxiliary values for election: %s", context->current_election_id);
+      log_info("Processing auxiliary values for election: %s", context->current_election_id);
     
     // Fetch auxiliary values from external API
-    auxiliary_value_t* aux_values;
+    api_auxiliary_value_t* aux_values;
     size_t aux_count;
     enclave_result_t result = api_fetch_auxiliary_values(context->current_election_id, &aux_values, &aux_count);
     if (result != ENCLAVE_SUCCESS) {
@@ -1127,4 +1218,42 @@ enclave_result_t host_retrieve_enclave_keys(host_context_t* context, const char*
     
     log_info("Successfully retrieved key from external storage");
     return ENCLAVE_SUCCESS;
+}
+
+// Utility function for hex string to binary conversion
+int hex_to_binary(const char* hex_str, uint8_t** out_binary, size_t* out_length) {
+    if (!hex_str || !out_binary || !out_length) {
+        return ERROR_INVALID_PARAMETER;
+    }
+    
+    size_t hex_len = strlen(hex_str);
+    if (hex_len == 0 || hex_len % 2 != 0) {
+        log_error("Invalid hex string length: %zu", hex_len);
+        return ERROR_INVALID_PARAMETER;
+    }
+    
+    size_t binary_len = hex_len / 2;    uint8_t* binary_data = malloc(binary_len);
+    if (!binary_data) {
+        log_error("Failed to allocate memory for binary conversion");
+        return ENCLAVE_ERROR_MEMORY_ALLOCATION;
+    }
+    
+    // Convert each pair of hex characters to a byte
+    for (size_t i = 0; i < binary_len; i++) {
+        char hex_byte[3] = {hex_str[i * 2], hex_str[i * 2 + 1], '\0'};
+        char* endptr;
+        unsigned long byte_val = strtoul(hex_byte, &endptr, 16);
+        
+        if (endptr != hex_byte + 2) {
+            log_error("Invalid hex character at position %zu", i * 2);
+            free(binary_data);
+            return ERROR_INVALID_PARAMETER;
+        }
+        
+        binary_data[i] = (uint8_t)byte_val;
+    }
+    
+    *out_binary = binary_data;
+    *out_length = binary_len;
+    return SUCCESS;
 }

@@ -1,0 +1,10 @@
+{
+    "api_base_url": "https://your-production-api.com",
+    "api_auth_token": "${ENCLAVE_API_AUTH_TOKEN}",
+    "api_timeout_ms": 60000,
+    "api_max_retries": 5,
+    "log_level": "WARNING",
+    "data_directory": "/var/lib/enclave-collector",
+    "enable_tls": true,
+    "enable_auth": true
+}

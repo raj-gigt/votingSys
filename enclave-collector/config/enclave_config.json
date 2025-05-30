@@ -1,0 +1,10 @@
+{
+    "api_base_url": "http://localhost:3000",
+    "api_auth_token": "",
+    "api_timeout_ms": 30000,
+    "api_max_retries": 3,
+    "log_level": "INFO",
+    "data_directory": "./data",
+    "enable_tls": true,
+    "enable_auth": false
+}

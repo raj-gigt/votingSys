@@ -70,8 +70,9 @@ int host_handle_status_request(host_context_t* context, collector_state_t* state
 
 // Utility functions
 int host_validate_request(const host_request_t* request);
-void host_perform_maintenance(host_context_t* context);
+int host_perform_maintenance(host_context_t* context);
 uint64_t get_timestamp_ms(void);
+int hex_to_binary(const char* hex_str, uint8_t** out_binary, size_t* out_length);
 
 // New enclave_result_t API functions for integration tests
 enclave_result_t host_initialize(host_context_t* context);

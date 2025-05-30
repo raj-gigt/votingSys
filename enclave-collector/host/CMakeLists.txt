@@ -11,6 +11,7 @@ add_executable(collector_host
     logging.c
     api_client.c
     election_management.c
+    config_manager.c
 )
 
 # Include directories

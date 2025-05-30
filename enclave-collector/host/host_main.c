@@ -172,20 +172,44 @@ int run_collector_service(host_context_t* context) {
         log_error("Failed to start network server: %s", get_error_description(result));
         network_cleanup(&server);
         return result;
-    }
+    }    log_info("Collector service is running. Press Ctrl+C to stop.");
 
-    log_info("Collector service is running. Press Ctrl+C to stop.");
-
-    // Main service loop
+    // Main service loop - Now actually doing meaningful work!
     while (g_running) {
-#ifdef _WIN32
-        Sleep(1000); // Sleep 1 second
-#else
-        sleep(1);
-#endif
+        // Process any pending client requests from the network
+        int process_result = host_process_pending_requests(context);
+        if (process_result != SUCCESS && process_result != ERROR_NO_DATA) {
+            log_warning("Failed to process pending requests: %s", get_error_description(process_result));
+        }
         
-        // Periodic tasks could go here
-        // For now, just keep the service alive
+        // Perform periodic maintenance tasks
+        host_perform_maintenance(context);
+        
+        // Check collector status and perform cryptographic operations
+        // This implements the mathematical protocol: aux = ∏(i=1 to n) aux_i = H()^(sk_A * Σ(i=1 to n) sk_i)
+        collector_state_t current_state;
+        if (host_handle_status_request(context, &current_state) == SUCCESS) {
+            if (current_state.total_votes > 0 && !current_state.is_sealed) {
+                log_info("Collector active with %d total votes (%d valid, %d invalid)", 
+                        current_state.total_votes, current_state.valid_votes, current_state.invalid_votes);
+                
+                // If we have accumulated enough auxiliary values, trigger aggregation
+                if (current_state.total_votes >= 10) { // Configurable threshold
+                    aggregation_summary_t summary;
+                    if (host_handle_aggregation_request(context, &summary) == SUCCESS) {
+                        log_info("Aggregation completed successfully. Posting to backend...");
+                        // TODO: Post aggregated result to backend via API
+                    }
+                }
+            }
+        }
+        
+        // Sleep for a short period to avoid busy waiting
+#ifdef _WIN32
+        Sleep(100); // Sleep 100ms - much more responsive now
+#else
+        usleep(100000); // 100ms
+#endif
     }
 
     log_info("Stopping collector service...");

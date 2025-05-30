@@ -3,6 +3,31 @@
 #include "file_operations.h"
 #include "shared_types.h"
 #include "error_codes.h"
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/time.h>
+#endif
+
+// Function prototypes
+static uint64_t get_current_timestamp(void);
+
+// Get current timestamp implementation
+static uint64_t get_current_timestamp(void) {
+#ifdef _WIN32
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    uint64_t time = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+    return time / 10000; // Convert from 100ns to ms
+#else
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+#endif
+}
 
 // OCALL implementations for enclave communication
 // These functions are called from the enclave via OCALLs

@@ -86,7 +86,9 @@ const char* get_error_description(int error_code) {
             return "Storage write failed";
         case ERROR_STORAGE_READ_FAILED:
             return "Storage read failed";
-        
+        case ERROR_NO_DATA:
+            return "No data available";
+
         // Network/IO errors
         case ERROR_NETWORK_FAILED:
             return "Network operation failed";

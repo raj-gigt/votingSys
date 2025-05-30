@@ -27,10 +27,8 @@ extern "C" {
 #define MAX_VOTES_PER_BATCH 100        // Maximum votes per processing batch
 #define MAX_RETRIES 3                  // Maximum retry attempts
 
-// Election constants
-#define MAX_ELECTION_ID_SIZE 64        // Maximum election ID length
-#define MAX_CANDIDATES 10              // Maximum number of candidates
-#define MAX_ELECTION_NAME_SIZE 128     // Maximum election name length
+// Election constants (using shared_types.h definitions to avoid conflicts)
+// Note: Election size constants are defined in shared_types.h
 #define ELECTION_TIMEOUT_HOURS 168     // 7 days maximum election duration
 
 // Storage constants

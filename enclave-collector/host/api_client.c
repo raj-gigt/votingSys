@@ -1,4 +1,5 @@
 #include "api_client.h"
+#include "config_manager.h"
 #include "logging.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +22,47 @@ typedef struct {
     char* data;
     size_t size;
 } http_response_data_t;
+
+// Simple JSON parsing helper function
+static char* extract_json_string_value(const char* json, const char* key) {
+    if (!json || !key) return NULL;
+    
+    // Find the key
+    char search_pattern[128];
+    snprintf(search_pattern, sizeof(search_pattern), "\"%s\":", key);
+    
+    char* key_pos = strstr(json, search_pattern);
+    if (!key_pos) return NULL;
+    
+    // Move to the value part
+    char* value_start = key_pos + strlen(search_pattern);
+    
+    // Skip whitespace
+    while (*value_start == ' ' || *value_start == '\t' || *value_start == '\n') {
+        value_start++;
+    }
+    
+    // Check if it's a string value (starts with quote)
+    if (*value_start != '"') return NULL;
+    value_start++; // Skip opening quote
+    
+    // Find closing quote
+    char* value_end = value_start;
+    while (*value_end != '"' && *value_end != '\0') {
+        value_end++;
+    }
+    
+    if (*value_end != '"') return NULL;
+    
+    // Allocate and copy the value
+    size_t value_len = value_end - value_start;
+    char* result = malloc(value_len + 1);
+    if (!result) return NULL;
+    
+    strncpy(result, value_start, value_len);
+    result[value_len] = '\0';
+      return result;
+}
 
 // Callback for writing HTTP response data
 static size_t write_callback(void* contents, size_t size, size_t nmemb, http_response_data_t* response) {
@@ -78,19 +120,15 @@ enclave_result_t api_client_init(const api_config_t* config) {
 
 // Cleanup API client
 void api_client_cleanup(void) {
-    if (!g_api_initialized) {
-        return;
-    }
-    
+    if (g_api_initialized) {
 #ifdef _WIN32
-    WSACleanup();
+        WSACleanup();
 #else
-    curl_global_cleanup();
+        curl_global_cleanup();
 #endif
-    
-    memset(&g_api_config, 0, sizeof(api_config_t));
-    g_api_initialized = 0;
-    log_info("API client cleaned up");
+        g_api_initialized = 0;
+        log_info("API client cleaned up");
+    }
 }
 
 // Perform HTTP GET request
@@ -100,7 +138,14 @@ static enclave_result_t http_get(const char* endpoint, http_response_data_t* res
     }
     
     char url[1024];
-    snprintf(url, sizeof(url), "%s%s", g_api_config.base_url, endpoint);
+    // Use configured base URL or fallback to default
+    const char* base_url = config_get_api_base_url();
+    if (!base_url || strlen(base_url) == 0) {
+        log_warning("No API base URL configured, using default");
+        base_url = "http://localhost:3000";
+    }
+    
+    snprintf(url, sizeof(url), "%s%s", base_url, endpoint);
     
     log_debug("HTTP GET: %s", url);
     
@@ -118,18 +163,18 @@ static enclave_result_t http_get(const char* endpoint, http_response_data_t* res
     // Initialize response
     response->data = NULL;
     response->size = 0;
-    
-    // Set curl options
+      // Set curl options
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, response);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, g_api_config.timeout_ms / 1000);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, config_get_api_timeout() / 1000);
     
     // Add auth header if available
     struct curl_slist* headers = NULL;
-    if (strlen(g_api_config.auth_token) > 0) {
+    const char* auth_token = config_get_api_auth_token();
+    if (auth_token && strlen(auth_token) > 0) {
         char auth_header[512];
-        snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", g_api_config.auth_token);
+        snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", auth_token);
         headers = curl_slist_append(headers, auth_header);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     }
@@ -164,7 +209,14 @@ static enclave_result_t http_post(const char* endpoint, const char* json_data, h
     }
     
     char url[1024];
-    snprintf(url, sizeof(url), "%s%s", g_api_config.base_url, endpoint);
+    // Use configured base URL or fallback to default
+    const char* base_url = config_get_api_base_url();
+    if (!base_url || strlen(base_url) == 0) {
+        log_warning("No API base URL configured, using default");
+        base_url = "http://localhost:3000";
+    }
+    
+    snprintf(url, sizeof(url), "%s%s", base_url, endpoint);
     
     log_debug("HTTP POST: %s", url);
     
@@ -182,21 +234,21 @@ static enclave_result_t http_post(const char* endpoint, const char* json_data, h
     // Initialize response
     response->data = NULL;
     response->size = 0;
-    
-    // Set curl options
+      // Set curl options
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, response);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, g_api_config.timeout_ms / 1000);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, config_get_api_timeout() / 1000);
     
     // Set headers
     struct curl_slist* headers = NULL;
     headers = curl_slist_append(headers, "Content-Type: application/json");
     
-    if (strlen(g_api_config.auth_token) > 0) {
+    const char* auth_token = config_get_api_auth_token();
+    if (auth_token && strlen(auth_token) > 0) {
         char auth_header[512];
-        snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", g_api_config.auth_token);
+        snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", auth_token);
         headers = curl_slist_append(headers, auth_header);
     }
     
@@ -232,8 +284,7 @@ enclave_result_t api_fetch_election_params(const char* election_id, crypto_param
     if (!g_api_initialized) {
         return ENCLAVE_ERROR_API_NOT_INITIALIZED;
     }
-    
-    char endpoint[256];
+      char endpoint[256];
     snprintf(endpoint, sizeof(endpoint), "/api/collector/params?election_id=%s", election_id);
     
     http_response_data_t response;
@@ -243,11 +294,41 @@ enclave_result_t api_fetch_election_params(const char* election_id, crypto_param
         return result;
     }
     
-    // Simple JSON parsing (in a real implementation, use a proper JSON library)
-    // For now, mock the response
-    strcpy(params->N, "mock_N_parameter");
-    strcpy(params->H, "mock_H_parameter");
-    strcpy(params->N_squared, "mock_N_squared_parameter");
+    if (!response.data) {
+        log_error("Empty response from election parameters API");
+        return ENCLAVE_ERROR_NETWORK_REQUEST_FAILED;
+    }
+    
+    log_debug("API Response: %s", response.data);
+    
+    // Parse JSON response to extract N, H, and skA
+    char* n_value = extract_json_string_value(response.data, "N");
+    char* h_value = extract_json_string_value(response.data, "H");
+    char* ska_value = extract_json_string_value(response.data, "skA");
+    
+    if (!n_value || !h_value || !ska_value) {
+        log_error("Failed to parse election parameters from JSON response");
+        if (n_value) free(n_value);
+        if (h_value) free(h_value);
+        if (ska_value) free(ska_value);
+        free(response.data);
+        return ENCLAVE_ERROR_INVALID_PARAMETER;
+    }
+    
+    // Copy values to the params structure
+    strncpy(params->N, n_value, sizeof(params->N) - 1);
+    params->N[sizeof(params->N) - 1] = '\0';
+    
+    strncpy(params->H, h_value, sizeof(params->H) - 1);
+    params->H[sizeof(params->H) - 1] = '\0';
+    
+    strncpy(params->skA, ska_value, sizeof(params->skA) - 1);
+    params->skA[sizeof(params->skA) - 1] = '\0';
+    
+    // Clean up
+    free(n_value);
+    free(h_value);
+    free(ska_value);
     
     if (response.data) {
         free(response.data);
@@ -290,7 +371,7 @@ enclave_result_t api_submit_auxiliary_product(const char* election_id, const cha
 }
 
 // Fetch auxiliary values from external API
-enclave_result_t api_fetch_auxiliary_values(const char* election_id, auxiliary_value_t** values, size_t* count) {
+enclave_result_t api_fetch_auxiliary_values(const char* election_id, api_auxiliary_value_t** values, size_t* count) {
     if (!election_id || !values || !count) {
         return ENCLAVE_ERROR_INVALID_PARAMETER;
     }
@@ -304,23 +385,73 @@ enclave_result_t api_fetch_auxiliary_values(const char* election_id, auxiliary_v
     
     http_response_data_t response;
     enclave_result_t result = http_get(endpoint, &response);
-    
-    if (result != ENCLAVE_SUCCESS) {
+      if (result != ENCLAVE_SUCCESS) {
         return result;
     }
     
-    // Mock response for now (in real implementation, parse JSON)
-    *count = 2;
-    *values = malloc(sizeof(auxiliary_value_t) * (*count));
+    if (!response.data || response.size == 0) {
+        log_error("Empty response from auxiliary values API");
+        return ENCLAVE_ERROR_API_RESPONSE_INVALID;
+    }
+    
+    // Parse JSON response to extract auxiliary values
+    // Expected format: {"auxiliaryValues": [{"voterId": "...", "auxiliaryValue": "..."}, ...]}
+    char* aux_array_start = strstr(response.data, "\"auxiliaryValues\"");
+    if (!aux_array_start) {
+        log_error("Invalid JSON response: missing auxiliaryValues array");
+        free(response.data);
+        return ENCLAVE_ERROR_API_RESPONSE_INVALID;
+    }
+    
+    // Count auxiliary values in the array
+    *count = 0;
+    char* search_ptr = aux_array_start;
+    while ((search_ptr = strstr(search_ptr + 1, "\"voterId\"")) != NULL) {
+        (*count)++;
+    }
+    
+    if (*count == 0) {
+        log_info("No auxiliary values found for election: %s", election_id);
+        *values = NULL;
+        free(response.data);
+        return ENCLAVE_SUCCESS;
+    }
+    
+    // Allocate array for auxiliary values
+    *values = malloc(*count * sizeof(api_auxiliary_value_t));
     if (!*values) {
-        if (response.data) free(response.data);
+        log_error("Failed to allocate memory for auxiliary values");
+        free(response.data);
         return ENCLAVE_ERROR_MEMORY_ALLOCATION;
     }
     
-    strcpy((*values)[0].voter_id, "voter_001");
-    strcpy((*values)[0].aux_value, "mock_aux_value_1");
-    strcpy((*values)[1].voter_id, "voter_002");
-    strcpy((*values)[1].aux_value, "mock_aux_value_2");
+    // Parse each auxiliary value from the JSON
+    size_t parsed_count = 0;
+    search_ptr = aux_array_start;
+    
+    while (parsed_count < *count && (search_ptr = strstr(search_ptr, "\"voterId\"")) != NULL) {
+        api_auxiliary_value_t* current = &(*values)[parsed_count];
+        memset(current, 0, sizeof(api_auxiliary_value_t));
+        
+        // Extract voter ID
+        char* voter_id = extract_json_string_value(search_ptr, "voterId");
+        if (voter_id) {
+            strncpy(current->voter_id, voter_id, sizeof(current->voter_id) - 1);
+            free(voter_id);
+        }
+        
+        // Extract auxiliary value
+        char* aux_value = extract_json_string_value(search_ptr, "auxiliaryValue");
+        if (aux_value) {
+            strncpy(current->aux_value, aux_value, sizeof(current->aux_value) - 1);
+            free(aux_value);
+        }
+        
+        parsed_count++;
+        search_ptr++; // Move past current match
+    }
+    
+    *count = parsed_count;
     
     if (response.data) {
         free(response.data);
@@ -368,19 +499,95 @@ enclave_result_t api_submit_vote_result(const char* election_id, const vote_rece
 }
 
 // Store enclave key externally
-/* 
-// Store enclave key to external storage - Temporarily disabled due to crypto_key_t struct issues
 enclave_result_t api_store_enclave_key(const char* key_id, const crypto_key_t* key) {
-    // Implementation temporarily disabled
-    return ENCLAVE_ERROR_NOT_IMPLEMENTED;
+    if (!key_id || !key) {
+        return ENCLAVE_ERROR_INVALID_PARAMETER;
+    }
+    
+    if (!g_api_initialized) {
+        return ENCLAVE_ERROR_API_NOT_INITIALIZED;
+    }
+    
+    log_info("Storing enclave key: %s", key_id);
+    
+    // Convert key to hex string for JSON
+    char key_hex[CRYPTO_KEY_SIZE * 2 + 1];
+    for (size_t i = 0; i < key->size && i < CRYPTO_KEY_SIZE; i++) {
+        snprintf(key_hex + i * 2, 3, "%02x", key->data[i]);
+    }
+    key_hex[key->size * 2] = '\0';
+    
+    char json_data[1024];
+    snprintf(json_data, sizeof(json_data), 
+        "{\"key_id\": \"%s\", \"key_data\": \"%s\", \"key_size\": %zu}",
+        key_id, key_hex, key->size);
+    
+    http_response_data_t response;
+    enclave_result_t result = http_post("/api/collector/store-key", json_data, &response);
+    
+    if (response.data) {
+        free(response.data);
+    }
+    
+    return result;
 }
 
-// Fetch enclave key from external storage - Temporarily disabled due to crypto_key_t struct issues  
+// Fetch enclave key from external storage
 enclave_result_t api_fetch_enclave_key(const char* key_id, crypto_key_t* key) {
-    // Implementation temporarily disabled
-    return ENCLAVE_ERROR_NOT_IMPLEMENTED;
+    if (!key_id || !key) {
+        return ENCLAVE_ERROR_INVALID_PARAMETER;
+    }
+    
+    if (!g_api_initialized) {
+        return ENCLAVE_ERROR_API_NOT_INITIALIZED;
+    }
+    
+    log_info("Fetching enclave key: %s", key_id);
+    
+    char endpoint[256];
+    snprintf(endpoint, sizeof(endpoint), "/api/collector/fetch-key?key_id=%s", key_id);
+    
+    http_response_data_t response;
+    enclave_result_t result = http_get(endpoint, &response);
+    
+    if (result == ENCLAVE_SUCCESS && response.data) {
+        // Parse the key data from JSON response
+        // Simple parsing - look for "key_data" field
+        const char* key_data_pos = strstr(response.data, "\"key_data\":");
+        if (key_data_pos) {
+            key_data_pos = strchr(key_data_pos + 11, '"');
+            if (key_data_pos) {
+                key_data_pos++; // Skip opening quote
+                const char* key_end = strchr(key_data_pos, '"');
+                if (key_end) {
+                    size_t hex_len = key_end - key_data_pos;
+                    if (hex_len <= CRYPTO_KEY_SIZE * 2) {
+                        // Convert hex string back to bytes
+                        key->size = hex_len / 2;
+                        for (size_t i = 0; i < key->size; i++) {
+                            char hex_byte[3] = {key_data_pos[i * 2], key_data_pos[i * 2 + 1], '\0'};
+                            key->data[i] = (uint8_t)strtoul(hex_byte, NULL, 16);
+                        }
+                    } else {
+                        result = ENCLAVE_ERROR_API_DATA_FORMAT;
+                    }
+                } else {
+                    result = ENCLAVE_ERROR_API_DATA_FORMAT;
+                }
+            } else {
+                result = ENCLAVE_ERROR_API_DATA_FORMAT;
+            }
+        } else {
+            result = ENCLAVE_ERROR_KEY_NOT_FOUND;
+        }
+    }
+    
+    if (response.data) {
+        free(response.data);
+    }
+    
+    return result;
 }
-*/
 
 // Store aggregation result externally
 enclave_result_t api_store_aggregation_result(const char* election_id, const vote_aggregation_t* result) {
@@ -459,7 +666,7 @@ enclave_result_t api_fetch_aggregation_result(const char* election_id, vote_aggr
 }
 
 // Free auxiliary values array
-void api_free_auxiliary_values(auxiliary_value_t* values, size_t count) {
+void api_free_auxiliary_values(api_auxiliary_value_t* values, size_t count) {
     (void)count; // Unused parameter
     if (values) {
         free(values);
@@ -716,5 +923,179 @@ enclave_result_t api_store_keys(const key_pair_t* keys) {
     }
     
     log_info("Successfully stored keys to external storage");
+    return ENCLAVE_SUCCESS;
+}
+
+// Real-time API implementation - fetch N and H parameters
+enclave_result_t api_fetch_params(crypto_params_t* params) {
+    if (!params) {
+        return ENCLAVE_ERROR_INVALID_PARAMETER;
+    }
+    
+    if (!g_api_initialized) {
+        return ENCLAVE_ERROR_API_NOT_INITIALIZED;
+    }
+    
+    log_info("Fetching N and H parameters from /api/collector/params");
+    
+    http_response_data_t response = {0};
+    enclave_result_t result = http_get("/api/collector/params", &response);
+    
+    if (result != ENCLAVE_SUCCESS) {
+        log_error("Failed to fetch parameters from API");
+        return result;
+    }
+    
+    if (!response.data) {
+        log_error("Empty response from parameters API");
+        return ENCLAVE_ERROR_API_COMMUNICATION;
+    }
+    
+    // Parse JSON response to extract N and H
+    char* n_value = extract_json_string_value(response.data, "N");
+    char* h_value = extract_json_string_value(response.data, "H");
+    
+    if (!n_value || !h_value) {
+        log_error("Failed to parse N and H from API response");
+        if (n_value) free(n_value);
+        if (h_value) free(h_value);
+        free(response.data);
+        return ENCLAVE_ERROR_API_DATA_FORMAT;
+    }
+    
+    // Copy to output structure
+    strncpy(params->N, n_value, sizeof(params->N) - 1);
+    strncpy(params->H, h_value, sizeof(params->H) - 1);
+    params->N[sizeof(params->N) - 1] = '\0';
+    params->H[sizeof(params->H) - 1] = '\0';
+    
+    log_info("Successfully fetched crypto parameters");
+    log_debug("N: %.32s...", params->N);
+    log_debug("H: %.32s...", params->H);
+    
+    // Clean up
+    free(n_value);
+    free(h_value);
+    free(response.data);
+    
+    return ENCLAVE_SUCCESS;
+}
+
+// Real-time API implementation - fetch auxiliary values array
+enclave_result_t api_fetch_auxiliary_values_realtime(api_auxiliary_value_t** values, size_t* count) {
+    if (!values || !count) {
+        return ENCLAVE_ERROR_INVALID_PARAMETER;
+    }
+    
+    if (!g_api_initialized) {
+        return ENCLAVE_ERROR_API_NOT_INITIALIZED;
+    }
+    
+    log_info("Fetching auxiliary values from /api/collector/fetch-auxiliary");
+    
+    http_response_data_t response = {0};
+    enclave_result_t result = http_get("/api/collector/fetch-auxiliary", &response);
+    
+    if (result != ENCLAVE_SUCCESS) {
+        log_error("Failed to fetch auxiliary values from API");
+        return result;
+    }
+    
+    if (!response.data) {
+        log_error("Empty response from auxiliary values API");
+        return ENCLAVE_ERROR_API_COMMUNICATION;
+    }
+    
+    // Parse JSON response - expect format: {"auxiliaryValues": [{"voterId": "...", "auxi": "..."}]}
+    // For now, implement basic parsing for the array
+    // In production, use a proper JSON parser like cJSON
+    
+    // Count the number of auxiliary values by counting "voterId" occurrences
+    *count = 0;
+    char* search_ptr = response.data;
+    while ((search_ptr = strstr(search_ptr, "\"voterId\"")) != NULL) {
+        (*count)++;
+        search_ptr++;
+    }
+    
+    if (*count == 0) {
+        log_info("No auxiliary values available");
+        *values = NULL;
+        free(response.data);
+        return ENCLAVE_SUCCESS;
+    }
+    
+    // Allocate array for auxiliary values
+    *values = malloc(*count * sizeof(api_auxiliary_value_t));
+    if (!*values) {
+        log_error("Failed to allocate memory for auxiliary values");
+        free(response.data);
+        return ENCLAVE_ERROR_MEMORY_ALLOCATION;
+    }
+    
+    // Parse each auxiliary value from the JSON
+    size_t parsed_count = 0;
+    search_ptr = response.data;
+    
+    while (parsed_count < *count && (search_ptr = strstr(search_ptr, "\"voterId\"")) != NULL) {
+        api_auxiliary_value_t* current = &(*values)[parsed_count];
+        memset(current, 0, sizeof(api_auxiliary_value_t));
+        
+        // Extract voter ID
+        char* voter_id = extract_json_string_value(search_ptr, "voterId");
+        if (voter_id) {
+            strncpy(current->voter_id, voter_id, sizeof(current->voter_id) - 1);
+            free(voter_id);
+        }
+        
+        // Extract auxiliary value (hex string)
+        char* aux_hex = extract_json_string_value(search_ptr, "auxi");
+        if (aux_hex) {
+            strncpy(current->aux_value, aux_hex, sizeof(current->aux_value) - 1);
+            free(aux_hex);
+        }
+        
+        parsed_count++;
+        search_ptr++;
+    }
+    
+    *count = parsed_count;
+    log_info("Successfully parsed %zu auxiliary values from API", *count);
+    
+    free(response.data);
+    return ENCLAVE_SUCCESS;
+}
+
+// Real-time API implementation - submit auxiliary product
+enclave_result_t api_submit_aux_product(const char* product_hex) {
+    if (!product_hex) {
+        return ENCLAVE_ERROR_INVALID_PARAMETER;
+    }
+    
+    if (!g_api_initialized) {
+        return ENCLAVE_ERROR_API_NOT_INITIALIZED;
+    }
+    
+    log_info("Submitting auxiliary product to /api/collector/aux");
+    
+    // Create JSON payload: {"aux": "product_hex_value"}
+    char json_payload[2048];
+    snprintf(json_payload, sizeof(json_payload), "{\"aux\":\"%s\"}", product_hex);
+    
+    http_response_data_t response = {0};
+    enclave_result_t result = http_post("/api/collector/aux", json_payload, &response);
+    
+    if (result != ENCLAVE_SUCCESS) {
+        log_error("Failed to submit auxiliary product to API");
+        return result;
+    }
+    
+    log_info("Successfully submitted auxiliary product to backend");
+    
+    if (response.data) {
+        log_debug("API response: %s", response.data);
+        free(response.data);
+    }
+    
     return ENCLAVE_SUCCESS;
 }

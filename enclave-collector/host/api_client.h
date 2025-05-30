@@ -22,25 +22,30 @@ typedef struct {
 typedef struct {
     char N[1024];          // N parameter as hex string
     char H[1024];          // H parameter as hex string
-    char N_squared[2048];  // N^2 parameter as hex string
+    char skA[1024];        // skA parameter as hex string
 } crypto_params_t;
 
-// Auxiliary value from external API
+// Auxiliary value from external API (JSON format)
 typedef struct {
     char voter_id[128];
     char aux_value[1024];  // Auxiliary value as hex string
-} auxiliary_value_t;
+} api_auxiliary_value_t;
 
 // API client functions
 enclave_result_t api_client_init(const api_config_t* config);
 void api_client_cleanup(void);
+
+// Real-time API endpoints matching collector/src/api.ts
+enclave_result_t api_fetch_params(crypto_params_t* params);
+enclave_result_t api_fetch_auxiliary_values_realtime(api_auxiliary_value_t** values, size_t* count);  
+enclave_result_t api_submit_aux_product(const char* product_hex);
 
 // Election management
 enclave_result_t api_fetch_election_params(const char* election_id, crypto_params_t* params);
 enclave_result_t api_submit_auxiliary_product(const char* election_id, const char* product_hex);
 
 // Vote data management
-enclave_result_t api_fetch_auxiliary_values(const char* election_id, auxiliary_value_t** values, size_t* count);
+enclave_result_t api_fetch_auxiliary_values(const char* election_id, api_auxiliary_value_t** values, size_t* count);
 enclave_result_t api_submit_vote_result(const char* election_id, const vote_receipt_t* receipt);
 
 // Key management (stored externally) - Remove crypto_key_t references for now
@@ -60,7 +65,7 @@ enclave_result_t api_get_keys(key_pair_t* keys);
 enclave_result_t api_store_keys(const key_pair_t* keys);
 
 // Utility functions
-void api_free_auxiliary_values(auxiliary_value_t* values, size_t count);
+void api_free_auxiliary_values(api_auxiliary_value_t* values, size_t count);
 
 #ifdef __cplusplus
 }

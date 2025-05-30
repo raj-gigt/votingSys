@@ -10,7 +10,6 @@
 #include <time.h>
 
 // JSON parsing helpers (simple implementation for demo)
-static char* create_json_string(const char* format, ...);
 static enclave_result_t parse_vote_json(const char* json, vote_t* vote);
 
 // Handle health check endpoint

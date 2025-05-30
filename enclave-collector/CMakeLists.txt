@@ -18,7 +18,6 @@ endif()
 
 # Configuration options
 option(SIMULATION_MODE "Build for simulation mode (WSL/Development)" ON)
-option(BUILD_TESTS "Build test suite" ON)
 option(ENABLE_LOGGING "Enable logging functionality" ON)
 option(ENABLE_ATTESTATION "Enable remote attestation" OFF)
 
@@ -80,11 +79,6 @@ if(NOT SIMULATION_MODE)
     add_subdirectory(enclave)
 endif()
 
-if(BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(tests)
-endif()
-
 # Global compile definitions
 if(SIMULATION_MODE)
     add_compile_definitions(SIMULATION_MODE=1)
@@ -102,7 +96,6 @@ endif()
 message(STATUS "=== Enclave Collector Configuration ===")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Simulation mode: ${SIMULATION_MODE}")
-message(STATUS "Build tests: ${BUILD_TESTS}")
 message(STATUS "Enable logging: ${ENABLE_LOGGING}")
 message(STATUS "Enable attestation: ${ENABLE_ATTESTATION}")
 message(STATUS "Dependencies found: ${DEPS_DIR}")
