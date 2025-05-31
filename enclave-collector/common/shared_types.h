@@ -9,26 +9,17 @@
 extern "C" {
 #endif
 
-// Maximum sizes and limits
-#define MAX_VOTE_SIZE 1024
-#define MAX_VOTER_ID_SIZE 64
-#define MAX_CANDIDATE_COUNT 256
-#define MAX_BALLOT_SIZE 2048
-#define MAX_SIGNATURE_SIZE 512
+// Maximum sizes and limits (simplified)
+#define MAX_AUXILIARY_VALUES 1000
+#define MAX_API_RESPONSE_SIZE 4096
+#define MAX_ELECTION_ID_SIZE 256
 #define MAX_PUBLIC_KEY_SIZE 512
 #define MAX_PRIVATE_KEY_SIZE 512
-#define PUBLIC_KEY_SIZE 512
-#define PRIVATE_KEY_SIZE 512
 #define MAX_ENCRYPTED_DATA_SIZE 2048
-#define MAX_SEALED_DATA_SIZE 4096
-#define MAX_ELECTION_ID_SIZE 256
-#define MAX_ELECTION_NAME_SIZE 256
 
 // Constants for sizes
-#define VOTE_ID_SIZE 32
 #define HASH_SIZE 32
 #define SIGNATURE_SIZE 64
-#define MAX_CANDIDATES 256
 #define CRYPTO_KEY_SIZE 32
 
 // Result/Error type for enclave operations
@@ -51,8 +42,7 @@ typedef enum {
     ENCLAVE_ERROR_INITIALIZATION_FAILED = 21,
     ENCLAVE_ERROR_CLEANUP_FAILED = 22,
     ENCLAVE_ERROR_ALREADY_RUNNING = 23,
-    
-    // Cryptographic errors (31-50)
+      // Cryptographic errors (31-50)
     ENCLAVE_ERROR_CRYPTO_FAILED = 31,
     ENCLAVE_ERROR_INVALID_SIGNATURE = 32,
     ENCLAVE_ERROR_SIGNATURE_VERIFICATION_FAILED = 33,
@@ -61,57 +51,61 @@ typedef enum {
     ENCLAVE_ERROR_ENCRYPTION_FAILED = 36,
     ENCLAVE_ERROR_DECRYPTION_FAILED = 37,
     ENCLAVE_ERROR_HASH_FAILED = 38,
+      // Auxiliary processing errors (51-70)
+    ENCLAVE_ERROR_INVALID_AUXILIARY_VALUE = 51,
+    ENCLAVE_ERROR_AUXILIARY_BUFFER_FULL = 52,
+    ENCLAVE_ERROR_AUXILIARY_VERIFICATION_FAILED = 53,
+    ENCLAVE_ERROR_AUXILIARY_ALREADY_PROCESSED = 54,
+    ENCLAVE_ERROR_AUXILIARY_COMPUTATION_FAILED = 55,    ENCLAVE_ERROR_AUXILIARY_AGGREGATION_FAILED = 56,
     
-    // Vote processing errors (51-70)
-    ENCLAVE_ERROR_INVALID_VOTE_ID = 51,
-    ENCLAVE_ERROR_INVALID_CANDIDATE = 52,
-    ENCLAVE_ERROR_INVALID_TIMESTAMP = 53,
-    ENCLAVE_ERROR_DUPLICATE_VOTE = 54,
-    ENCLAVE_ERROR_VOTE_BUFFER_FULL = 55,
-    ENCLAVE_ERROR_INVALID_VOTE = 56,
-    ENCLAVE_ERROR_VOTE_VERIFICATION_FAILED = 57,
+    // Network errors (71-90)
+    ENCLAVE_ERROR_NETWORK_INIT = 71,
+    ENCLAVE_ERROR_NETWORK_SOCKET = 72,
+    ENCLAVE_ERROR_NETWORK_BIND = 73,
+    ENCLAVE_ERROR_NETWORK_LISTEN = 74,
+    ENCLAVE_ERROR_NETWORK_RECEIVE = 75,
+    ENCLAVE_ERROR_NETWORK_SEND = 76,
+    ENCLAVE_ERROR_INVALID_HTTP_REQUEST = 77,
+    ENCLAVE_ERROR_NETWORK_INITIALIZATION_FAILED = 78,
+    ENCLAVE_ERROR_NETWORK_REQUEST_FAILED = 79,
     
-    // Sealed storage errors (71-90)
-    ENCLAVE_ERROR_SEALING_FAILED = 71,
-    ENCLAVE_ERROR_UNSEALING_FAILED = 72,
-    ENCLAVE_ERROR_INVALID_SEALED_DATA = 73,
-    ENCLAVE_ERROR_SEALED_DATA_INTEGRITY = 74,
-    ENCLAVE_ERROR_SEALED_DATA_TOO_LARGE = 75,
-    ENCLAVE_ERROR_NO_SEALED_DATA = 76,      // Network errors (91-110)
-    ENCLAVE_ERROR_NETWORK_INIT = 91,
-    ENCLAVE_ERROR_NETWORK_SOCKET = 92,
-    ENCLAVE_ERROR_NETWORK_BIND = 93,
-    ENCLAVE_ERROR_NETWORK_LISTEN = 94,
-    ENCLAVE_ERROR_NETWORK_RECEIVE = 95,
-    ENCLAVE_ERROR_NETWORK_SEND = 96,
-    ENCLAVE_ERROR_INVALID_HTTP_REQUEST = 97,
-    ENCLAVE_ERROR_NETWORK_INITIALIZATION_FAILED = 98,
-    ENCLAVE_ERROR_NETWORK_REQUEST_FAILED = 99,
+    // Thread errors (81-90)
+    ENCLAVE_ERROR_THREAD_CREATE = 81,
+    ENCLAVE_ERROR_THREAD_JOIN = 82,
+      // API errors (91-100)
+    ENCLAVE_ERROR_API_NOT_INITIALIZED = 91,
+    ENCLAVE_ERROR_KEY_NOT_FOUND = 92,
+    ENCLAVE_ERROR_INVALID_STATE = 93,
+    ENCLAVE_ERROR_API_RESPONSE_INVALID = 94,
+    ENCLAVE_ERROR_API_COMMUNICATION = 95,
+    ENCLAVE_ERROR_API_DATA_FORMAT = 96,
     
-    // Thread errors (111-120)
-    ENCLAVE_ERROR_THREAD_CREATE = 111,
-    ENCLAVE_ERROR_THREAD_JOIN = 112,
-      // File I/O errors (121-130)
-    ENCLAVE_ERROR_FILE_NOT_FOUND = 121,
-    ENCLAVE_ERROR_FILE_READ_FAILED = 122,
-    ENCLAVE_ERROR_FILE_WRITE_FAILED = 123,
-    ENCLAVE_ERROR_FILE_PERMISSION = 124,
-      // API errors (131-140)
-    ENCLAVE_ERROR_API_NOT_INITIALIZED = 131,
-    ENCLAVE_ERROR_KEY_NOT_FOUND = 132,
-    ENCLAVE_ERROR_INVALID_STATE = 133,
-    ENCLAVE_ERROR_API_RESPONSE_INVALID = 134,
-    ENCLAVE_ERROR_API_COMMUNICATION = 135,
-    ENCLAVE_ERROR_API_DATA_FORMAT = 136
+    // Additional cryptographic errors (101-120)
+    ENCLAVE_ERROR_INVALID_PROOF = 101,
+    ENCLAVE_ERROR_NO_DATA = 102,
+    ENCLAVE_ERROR_BIGINT_ERROR = 103,
+    ENCLAVE_ERROR_MATH_OPERATION_FAILED = 104,
+    ENCLAVE_ERROR_CRYPTO_PROCESSOR_FAILED = 105,
+    ENCLAVE_ERROR_NOT_SUPPORTED = 106
 } enclave_result_t;
 
-// Vote status enumeration
-typedef enum {
-    VOTE_STATUS_PENDING = 0,
-    VOTE_STATUS_ACCEPTED = 1,
-    VOTE_STATUS_REJECTED = 2,
-    VOTE_STATUS_INVALID = 3
-} vote_status_t;
+// Cryptographic signature structure
+typedef struct {
+    uint8_t data[SIGNATURE_SIZE];
+    size_t size;
+    uint8_t algorithm;  // Signature algorithm type
+} crypto_signature_t;
+
+// Auxiliary aggregation product structure
+typedef struct {
+    char product_hex[4096];     // Final auxiliary product (hex string)
+    uint32_t total_values;      // Number of auxiliary values aggregated
+    uint64_t computation_time;  // Time taken for computation (ms)
+    uint8_t proof[256];         // Zero-knowledge proof
+    size_t proof_size;          // Size of the proof
+    uint64_t timestamp;         // When aggregation was completed
+    bool is_valid;              // Whether the product is valid
+} auxiliary_product_t;
 
 // Signature structure
 typedef struct {
@@ -124,54 +118,6 @@ typedef struct {
     uint8_t data[CRYPTO_KEY_SIZE];
     size_t size;
 } crypto_key_t;
-
-// Cryptographic signature structure
-typedef struct {
-    uint8_t data[SIGNATURE_SIZE];
-    size_t size;
-} crypto_signature_t;
-
-// Vote structure
-typedef struct {
-    uint8_t vote_id[VOTE_ID_SIZE];
-    uint32_t candidate_id;
-    uint64_t timestamp;
-    signature_t signature;
-    uint8_t encrypted_vote[MAX_VOTE_SIZE];
-    size_t encrypted_vote_size;
-} vote_t;
-
-// Vote receipt structure
-typedef struct {
-    uint8_t vote_id[VOTE_ID_SIZE];
-    uint64_t timestamp;
-    vote_status_t status;
-    uint8_t receipt_hash[HASH_SIZE];
-} vote_receipt_t;
-
-// Vote aggregation structure
-typedef struct {
-    uint32_t candidate_votes[MAX_CANDIDATES];
-    uint32_t total_votes;
-} vote_aggregation_t;
-
-// Collector state structure
-typedef struct {
-    uint32_t total_votes;
-    uint32_t valid_votes;
-    uint32_t invalid_votes;
-    bool is_sealed;
-    vote_aggregation_t aggregation;
-} collector_state_t;
-
-// Enclave information structure
-typedef struct {
-    char version[16];
-    uint32_t total_votes;
-    uint32_t valid_votes;
-    uint32_t invalid_votes;
-    bool is_sealed;
-} enclave_info_t;
 
 // Cryptographic key pair
 typedef struct {
@@ -189,100 +135,91 @@ typedef struct {
     uint8_t tag[16]; // Authentication tag for AEAD
 } encrypted_data_t;
 
-// Sealed data container (for enclave persistent storage)
-typedef struct {
-    uint32_t magic;                                // Magic number for validation
-    size_t data_size;                             // Size of original data
-    size_t sealed_size;                           // Size of sealed data
-    uint8_t sealed_data[MAX_SEALED_DATA_SIZE];    // Sealed data
-    size_t sealed_data_size;                      // Actual sealed data size
-} sealed_data_t;
+// Auxiliary value structure for the mathematical protocol
+struct auxiliary_value {
+    char aux_hex[2048];     // aux_i = pk_A^sk_i (hex string)
+    uint32_t user_id;
+    uint64_t timestamp;
+    uint8_t signature[64];  // Cryptographic signature for verification
+};
 
-// Vote aggregation result
-typedef struct {
-    uint32_t candidate_id;
-    uint64_t vote_count;
-} vote_result_t;
-
-// Aggregation summary
-typedef struct {
-    vote_result_t results[MAX_CANDIDATE_COUNT];
-    size_t candidate_count;
-    uint64_t total_votes_counted;
-    uint8_t aggregation_proof[MAX_SIGNATURE_SIZE];
-    size_t proof_size;
-} aggregation_summary_t;
-
-// Network message structure
-typedef struct {
-    uint32_t message_type;
-    uint32_t message_id;
-    size_t payload_size;
-    uint8_t payload[];
-} network_message_t;
-
-// File operation structure
-typedef struct {
-    char filename[256];
-    uint8_t* data;
-    size_t data_size;
-    uint32_t operation_type; // READ, WRITE, APPEND
-} file_operation_t;
-
-// System information structure
-typedef struct {
-    char hostname[256];
-    uint64_t total_memory;
-    uint64_t available_memory;
-    uint32_t cpu_count;
-    uint64_t uptime;
-} system_info_t;
-
-// Vote processing statistics
-typedef struct {
-    uint32_t processed_votes;
-    uint32_t buffer_capacity;
-    uint32_t buffer_used;
-    uint32_t buffer_available;
-} vote_processing_stats_t;
-
-// Sealed storage information
-typedef struct {
-    bool is_initialized;
-    size_t current_size;
-    size_t max_size;
-    size_t available_size;
-} sealed_storage_info_t;
-
-// Election parameters structure (from external API)
-typedef struct {
-    uint32_t num_candidates;
-    uint32_t max_votes;
-    uint64_t start_time;
-    uint64_t end_time;
-    uint8_t public_key[MAX_PUBLIC_KEY_SIZE];
-    size_t public_key_size;
-    char election_name[MAX_ELECTION_NAME_SIZE];
-} election_params_t;
-
-// Auxiliary values structure (from external API)
-typedef struct {
+// API auxiliary value structure (simplified for API communication)
+struct api_auxiliary_value {
     char voter_id[128];
-    uint8_t aux_value[1024];
+    char aux_value[1024];
     size_t aux_value_size;
     uint64_t timestamp;
+};
+
+// Cryptographic parameters structure
+struct crypto_params {
+    char N[2048];        // The modulus N = p*q (hex string)
+    char H[2048];        // The hash function output in Z_N^2* (hex string)
+    char skA[2048];      // Aggregator secret key (hex string)
+    char election_id[128];
+};
+
+// Auxiliary state structure
+struct auxiliary_state {
+    bool initialized;
+    uint32_t processed_count;
+    uint64_t session_start;
+    uint64_t last_aggregation;
+    bool is_sealed;
+};
+
+// Forward declarations and missing types
+typedef struct auxiliary_value auxiliary_value_t;
+typedef struct api_auxiliary_value api_auxiliary_value_t;
+typedef struct crypto_params crypto_params_t;
+typedef struct auxiliary_state auxiliary_state_t;
+
+// Auxiliary values structure (from external API) - simplified
+typedef struct {
+    uint32_t count;
+    struct {
+        char voter_id[128];
+        uint8_t aux_value[1024];
+        size_t aux_value_size;
+        uint64_t timestamp;
+    } values[MAX_AUXILIARY_VALUES];
 } auxiliary_values_t;
 
-// Final election results structure
+// API response structure for client-server communication
 typedef struct {
-    char election_id[MAX_ELECTION_ID_SIZE];
-    uint32_t total_votes;
-    uint32_t candidate_count;
-    uint32_t candidate_votes[MAX_CANDIDATES];
-    uint64_t timestamp;
-    uint8_t result_proof[MAX_SIGNATURE_SIZE];
-    size_t proof_size;
-} final_results_t;
+    int status_code;
+    char message[MAX_API_RESPONSE_SIZE];
+    size_t message_length;
+    bool success;
+} api_response_t;
+
+// Collector state structure (simplified)
+typedef struct {
+    uint32_t auxiliary_count;
+    bool initialized;
+} collector_state_t;
+
+// Enclave information structure (simplified)
+typedef struct {
+    char version[16];
+    uint32_t auxiliary_count;
+} enclave_info_t;
+
+// Final aggregation result structure
+typedef struct {
+    char aux_hex[4096];     // Final auxiliary product (hex string from enclave)
+    uint32_t total_users;
+    uint64_t computation_time;
+    uint8_t aggregation_proof[256]; // Zero-knowledge proof from enclave
+} aggregation_result_t;
+
+// Aggregation summary structure (same as aggregation result)
+typedef struct {
+    char aux_hex[4096];     // Final auxiliary product (hex string from enclave)
+    uint32_t total_users;
+    uint64_t computation_time;
+    uint8_t aggregation_proof[256]; // Zero-knowledge proof from enclave
+} aggregation_summary_t;
 
 #ifdef __cplusplus
 }

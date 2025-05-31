@@ -18,51 +18,17 @@ typedef struct {
     int max_retries;
 } api_config_t;
 
-// Cryptographic parameters from external API (Paillier-specific)
-typedef struct {
-    char N[1024];          // N parameter as hex string
-    char H[1024];          // H parameter as hex string
-    char skA[1024];        // skA parameter as hex string
-} crypto_params_t;
-
-// Auxiliary value from external API (JSON format)
-typedef struct {
-    char voter_id[128];
-    char aux_value[1024];  // Auxiliary value as hex string
-} api_auxiliary_value_t;
+// Forward declarations - actual definitions are in shared_types.h
+// crypto_params_t and api_auxiliary_value_t are already defined in shared_types.h
 
 // API client functions
 enclave_result_t api_client_init(const api_config_t* config);
 void api_client_cleanup(void);
 
-// Real-time API endpoints matching collector/src/api.ts
-enclave_result_t api_fetch_params(crypto_params_t* params);
-enclave_result_t api_fetch_auxiliary_values_realtime(api_auxiliary_value_t** values, size_t* count);  
-enclave_result_t api_submit_aux_product(const char* product_hex);
-
-// Election management
-enclave_result_t api_fetch_election_params(const char* election_id, crypto_params_t* params);
-enclave_result_t api_submit_auxiliary_product(const char* election_id, const char* product_hex);
-
-// Vote data management
-enclave_result_t api_fetch_auxiliary_values(const char* election_id, api_auxiliary_value_t** values, size_t* count);
-enclave_result_t api_submit_vote_result(const char* election_id, const vote_receipt_t* receipt);
-
-// Key management (stored externally) - Remove crypto_key_t references for now
-// enclave_result_t api_store_enclave_key(const char* key_id, const crypto_key_t* key);
-// enclave_result_t api_fetch_enclave_key(const char* key_id, crypto_key_t* key);
-
-// Result storage
-enclave_result_t api_store_aggregation_result(const char* election_id, const vote_aggregation_t* result);
-enclave_result_t api_fetch_aggregation_result(const char* election_id, vote_aggregation_t* result);
-
-// Additional API functions for external integration
-enclave_result_t api_get_election_parameters(election_params_t* params);
-enclave_result_t api_get_auxiliary_values(auxiliary_values_t* aux_values);
-enclave_result_t api_store_vote_receipt(const vote_receipt_t* receipt);
-enclave_result_t api_store_final_results(const final_results_t* results);
-enclave_result_t api_get_keys(key_pair_t* keys);
-enclave_result_t api_store_keys(const key_pair_t* keys);
+// Essential collector endpoints (only 3 needed)
+enclave_result_t api_fetch_system_params(crypto_params_t* params);
+enclave_result_t api_fetch_auxiliary_values(api_auxiliary_value_t** values, size_t* count);
+enclave_result_t api_submit_aux_product(const char* aux_product);
 
 // Utility functions
 void api_free_auxiliary_values(api_auxiliary_value_t* values, size_t count);

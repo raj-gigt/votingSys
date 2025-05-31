@@ -57,22 +57,7 @@ const char* get_error_description(int error_code) {
         case ERROR_HASH_FAILED:
             return "Hash operation failed";
         
-        // Vote processing errors
-        case ERROR_INVALID_VOTE:
-            return "Invalid vote format";
-        case ERROR_VOTE_ALREADY_PROCESSED:
-            return "Vote already processed";
-        case ERROR_VOTE_VERIFICATION_FAILED:
-            return "Vote verification failed";
-        case ERROR_INVALID_VOTER_ID:
-            return "Invalid voter ID";
-        case ERROR_INVALID_CANDIDATE_ID:
-            return "Invalid candidate ID";
-        case ERROR_VOTE_EXPIRED:
-            return "Vote has expired";
-        case ERROR_DUPLICATE_VOTE:
-            return "Duplicate vote detected";
-        
+    
         // Storage errors
         case ERROR_SEAL_FAILED:
             return "Data sealing failed";
@@ -118,8 +103,6 @@ const char* get_error_description(int error_code) {
         // Aggregation errors
         case ERROR_AGGREGATION_FAILED:
             return "Vote aggregation failed";
-        case ERROR_INSUFFICIENT_VOTES:
-            return "Insufficient votes for aggregation";
         case ERROR_AGGREGATION_CORRUPTED:
             return "Aggregation data corrupted";
         case ERROR_PROOF_GENERATION_FAILED:
@@ -200,39 +183,24 @@ const char* get_enclave_error_description(enclave_result_t error_code) {
         case ENCLAVE_ERROR_ENCRYPTION_FAILED:
             return "Encryption failed";
         case ENCLAVE_ERROR_DECRYPTION_FAILED:
-            return "Decryption failed";
-        case ENCLAVE_ERROR_HASH_FAILED:
+            return "Decryption failed";        case ENCLAVE_ERROR_HASH_FAILED:
             return "Hash computation failed";
         
-        // Vote processing errors
-        case ENCLAVE_ERROR_INVALID_VOTE_ID:
-            return "Invalid vote ID";
-        case ENCLAVE_ERROR_INVALID_CANDIDATE:
-            return "Invalid candidate ID";
-        case ENCLAVE_ERROR_INVALID_TIMESTAMP:
-            return "Invalid timestamp";
-        case ENCLAVE_ERROR_DUPLICATE_VOTE:
-            return "Duplicate vote detected";
-        case ENCLAVE_ERROR_VOTE_BUFFER_FULL:
-            return "Vote buffer is full";
-        case ENCLAVE_ERROR_INVALID_VOTE:
-            return "Invalid vote";
-        case ENCLAVE_ERROR_VOTE_VERIFICATION_FAILED:
-            return "Vote verification failed";
-        
-        // Sealed storage errors
-        case ENCLAVE_ERROR_SEALING_FAILED:
-            return "Data sealing failed";
-        case ENCLAVE_ERROR_UNSEALING_FAILED:
-            return "Data unsealing failed";
-        case ENCLAVE_ERROR_INVALID_SEALED_DATA:
-            return "Invalid sealed data";
-        case ENCLAVE_ERROR_SEALED_DATA_INTEGRITY:
-            return "Sealed data integrity check failed";
-        case ENCLAVE_ERROR_SEALED_DATA_TOO_LARGE:
-            return "Sealed data too large";
-        case ENCLAVE_ERROR_NO_SEALED_DATA:
-            return "No sealed data found";
+        // Auxiliary processing errors
+        case ENCLAVE_ERROR_INVALID_AUXILIARY_VALUE:
+            return "Invalid auxiliary value";
+        case ENCLAVE_ERROR_AUXILIARY_BUFFER_FULL:
+            return "Auxiliary buffer is full";
+        case ENCLAVE_ERROR_AUXILIARY_VERIFICATION_FAILED:
+            return "Auxiliary value verification failed";
+        case ENCLAVE_ERROR_AUXILIARY_ALREADY_PROCESSED:
+            return "Auxiliary value already processed";
+        case ENCLAVE_ERROR_AUXILIARY_COMPUTATION_FAILED:
+            return "Auxiliary computation failed";
+        case ENCLAVE_ERROR_AUXILIARY_AGGREGATION_FAILED:
+            return "Auxiliary aggregation failed";
+          case ENCLAVE_ERROR_NOT_SUPPORTED:
+            return "Operation not supported";
         
         // Network errors
         case ENCLAVE_ERROR_NETWORK_INIT:
@@ -256,15 +224,35 @@ const char* get_enclave_error_description(enclave_result_t error_code) {
         case ENCLAVE_ERROR_THREAD_JOIN:
             return "Thread join failed";
         
-        // File I/O errors
-        case ENCLAVE_ERROR_FILE_NOT_FOUND:
-            return "File not found";
-        case ENCLAVE_ERROR_FILE_READ_FAILED:
-            return "File read failed";
-        case ENCLAVE_ERROR_FILE_WRITE_FAILED:
-            return "File write failed";
-        case ENCLAVE_ERROR_FILE_PERMISSION:
-            return "File permission denied";
+        // API errors
+        case ENCLAVE_ERROR_API_NOT_INITIALIZED:
+            return "API not initialized";
+        case ENCLAVE_ERROR_KEY_NOT_FOUND:
+            return "Key not found";
+        case ENCLAVE_ERROR_INVALID_STATE:
+            return "Invalid state";
+        case ENCLAVE_ERROR_API_RESPONSE_INVALID:
+            return "Invalid API response";
+        case ENCLAVE_ERROR_API_COMMUNICATION:
+            return "API communication failed";
+        case ENCLAVE_ERROR_API_DATA_FORMAT:
+            return "Invalid API data format";
+        
+        // Additional cryptographic errors
+        case ENCLAVE_ERROR_INVALID_PROOF:
+            return "Invalid cryptographic proof";
+        case ENCLAVE_ERROR_NO_DATA:
+            return "No data available";
+        case ENCLAVE_ERROR_BIGINT_ERROR:
+            return "Big integer operation error";
+        case ENCLAVE_ERROR_MATH_OPERATION_FAILED:
+            return "Mathematical operation failed";
+        case ENCLAVE_ERROR_CRYPTO_PROCESSOR_FAILED:
+            return "Cryptographic processor failed";
+        case ENCLAVE_ERROR_NETWORK_INITIALIZATION_FAILED:
+            return "Network initialization failed";
+        case ENCLAVE_ERROR_NETWORK_REQUEST_FAILED:
+            return "Network request failed";
         
         default:
             return "Unknown enclave error code";

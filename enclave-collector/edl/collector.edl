@@ -99,8 +99,7 @@ enclave {
             [out, size=result_size] uint8_t* result,
             [in, out] size_t* result_size
         );
-        
-        // Vote aggregation
+          // Vote aggregation and cryptographic processing
         public int ecall_aggregate_votes(
             [out] aggregation_summary_t* summary
         );
@@ -114,6 +113,41 @@ enclave {
             [in] const aggregation_summary_t* summary,
             [out, size=proof_size] uint8_t* proof,
             [in, out] size_t* proof_size
+        );
+        
+        // Secure cryptographic operations for auxiliary values
+        public int ecall_initialize_crypto_processor(
+            [in, string] const char* election_id,
+            [in, string] const char* N_hex,
+            [in, string] const char* H_hex,
+            [in, string] const char* skA_hex
+        );
+        
+        public int ecall_process_auxiliary_value(
+            [in, string] const char* aux_hex,
+            [in, string] const char* voter_id,
+            uint64_t timestamp
+        );
+        
+        public int ecall_process_auxiliary_values_batch(
+            [in, count=count] const char** aux_hex_values,
+            [in, count=count] const char** voter_ids,
+            [in, count=count] const uint64_t* timestamps,
+            size_t count,
+            [out] int* processed_count
+        );
+        
+        public int ecall_compute_final_aggregation(
+            [out, size=result_hex_size] char* result_hex,
+            [in, out] size_t* result_hex_size,
+            [out, size=proof_size] uint8_t* zk_proof,
+            [in, out] size_t* proof_size
+        );
+        
+        public int ecall_verify_auxiliary_value_cryptographically(
+            [in, string] const char* aux_hex,
+            [in, string] const char* voter_public_key_hex,
+            [out] int* is_valid
         );
         
         // Secure storage

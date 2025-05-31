@@ -6,25 +6,21 @@ cmake_minimum_required(VERSION 3.16)
 # Check if we're building for simulation or hardware
 if(SIMULATION_MODE)
     message(STATUS "Building enclave in simulation mode")
-    set(ENCLAVE_TARGET "collector_enclave_sim")    set(ENCLAVE_SOURCES
+    set(ENCLAVE_TARGET "auxiliary_collector_enclave_sim")    set(ENCLAVE_SOURCES
         enclave_sim.c
         collector_operations.c
         crypto_operations.c
-        vote_processing.c
-        sealed_storage.c
-        secure_math.c
+        secure_crypto_processor.c
     )
     set(ENCLAVE_LIBS ${BIGINT_LIBRARY})
 else()
     message(STATUS "Building enclave for SGX hardware")
     find_package(OpenEnclave CONFIG REQUIRED)
-    set(ENCLAVE_TARGET "collector_enclave")    set(ENCLAVE_SOURCES
+    set(ENCLAVE_TARGET "auxiliary_collector_enclave")    set(ENCLAVE_SOURCES
         enclave.c
         collector_operations.c
         crypto_operations.c
-        vote_processing.c
-        sealed_storage.c
-        secure_math.c
+        secure_crypto_processor.c
     )
     set(ENCLAVE_LIBS openenclave::oeenclave ${BIGINT_LIBRARY})
 endif()
@@ -54,22 +50,21 @@ target_compile_options(${ENCLAVE_TARGET} PRIVATE
     -fPIC
 )
 
-if(NOT SIMULATION_MODE)
-    # Generate enclave files for hardware SGX
-    add_custom_command(OUTPUT collector_u.h collector_u.c collector_args.h
-        DEPENDS ${CMAKE_SOURCE_DIR}/edl/collector.edl
-        COMMAND openenclave::oeedger8r --untrusted ${CMAKE_SOURCE_DIR}/edl/collector.edl --search-path ${OE_INCLUDEDIR}/openenclave/edl/sgx
+if(NOT SIMULATION_MODE)    # Generate enclave files for hardware SGX
+    add_custom_command(OUTPUT collector_auxiliary_u.h collector_auxiliary_u.c collector_auxiliary_args.h
+        DEPENDS ${CMAKE_SOURCE_DIR}/edl/collector_auxiliary.edl
+        COMMAND openenclave::oeedger8r --untrusted ${CMAKE_SOURCE_DIR}/edl/collector_auxiliary.edl --search-path ${OE_INCLUDEDIR}/openenclave/edl/sgx
     )
     
-    add_custom_command(OUTPUT collector_t.h collector_t.c
-        DEPENDS ${CMAKE_SOURCE_DIR}/edl/collector.edl
-        COMMAND openenclave::oeedger8r --trusted ${CMAKE_SOURCE_DIR}/edl/collector.edl --search-path ${OE_INCLUDEDIR}/openenclave/edl/sgx
+    add_custom_command(OUTPUT collector_auxiliary_t.h collector_auxiliary_t.c
+        DEPENDS ${CMAKE_SOURCE_DIR}/edl/collector_auxiliary.edl
+        COMMAND openenclave::oeedger8r --trusted ${CMAKE_SOURCE_DIR}/edl/collector_auxiliary.edl --search-path ${OE_INCLUDEDIR}/openenclave/edl/sgx
     )
     
-    add_custom_target(enclave_generated_files DEPENDS collector_t.h collector_t.c)
+    add_custom_target(enclave_generated_files DEPENDS collector_auxiliary_t.h collector_auxiliary_t.c)
     add_dependencies(${ENCLAVE_TARGET} enclave_generated_files)
     
-    target_sources(${ENCLAVE_TARGET} PRIVATE collector_t.c)
+    target_sources(${ENCLAVE_TARGET} PRIVATE collector_auxiliary_t.c)
     
     # Sign the enclave
     add_custom_command(TARGET ${ENCLAVE_TARGET} POST_BUILD

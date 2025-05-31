@@ -1,0 +1,185 @@
+// Enclave Definition Language file for auxiliary aggregation collector enclave
+// Simplified version focusing only on auxiliary value processing
+
+enclave {
+    include "shared_types.h"
+    include "error_codes.h"
+    
+    trusted {
+        // Initialization and cleanup
+        public int ecall_initialize_auxiliary_collector(
+            [out] collector_state_t* state
+        );
+        
+        public int ecall_cleanup_auxiliary_collector(void);
+        
+        // Cryptographic processor initialization for auxiliary operations
+        public int ecall_initialize_crypto_processor(
+            [in, string] const char* election_id,
+            [in, string] const char* N_hex,
+            [in, string] const char* H_hex,
+            [in, string] const char* skA_hex
+        );
+        
+        // Auxiliary value processing
+        public int ecall_process_auxiliary_value(
+            [in, string] const char* aux_hex,
+            [in, string] const char* voter_id,
+            uint64_t timestamp
+        );
+        
+        public int ecall_process_auxiliary_values_batch(
+            [in, count=count] const char** aux_hex_values,
+            [in, count=count] const char** voter_ids,
+            [in, count=count] const uint64_t* timestamps,
+            size_t count,
+            [out] int* processed_count
+        );
+        
+        public int ecall_compute_final_aggregation(
+            [out, size=result_hex_size] char* result_hex,
+            [in, out] size_t* result_hex_size,
+            [out, size=proof_size] uint8_t* zk_proof,
+            [in, out] size_t* proof_size
+        );
+        
+        public int ecall_verify_auxiliary_value_cryptographically(
+            [in, string] const char* aux_hex,
+            [in, string] const char* voter_public_key_hex,
+            [out] int* is_valid
+        );
+        
+        // Key management for auxiliary operations
+        public int ecall_generate_auxiliary_keys(
+            [out] key_pair_t* keys
+        );
+        
+        public int ecall_get_auxiliary_public_key(
+            [out, size=key_size] uint8_t* public_key,
+            [in, out] size_t* key_size
+        );
+        
+        // Cryptographic operations
+        public int ecall_encrypt_auxiliary_data(
+            [in, size=data_size] const uint8_t* plaintext,
+            size_t data_size,
+            [out] encrypted_data_t* encrypted
+        );
+        
+        public int ecall_decrypt_auxiliary_data(
+            [in] const encrypted_data_t* encrypted,
+            [out, size=buffer_size] uint8_t* plaintext,
+            [in, out] size_t* buffer_size
+        );
+        
+        public int ecall_sign_auxiliary_data(
+            [in, size=data_size] const uint8_t* data,
+            size_t data_size,
+            [out, size=sig_size] uint8_t* signature,
+            [in, out] size_t* sig_size
+        );
+        
+        public int ecall_verify_auxiliary_signature(
+            [in, size=data_size] const uint8_t* data,
+            size_t data_size,
+            [in, size=sig_size] const uint8_t* signature,
+            size_t sig_size,
+            [in, size=key_size] const uint8_t* public_key,
+            size_t key_size,
+            [out] int* is_valid
+        );
+        
+        // Big integer operations for auxiliary math
+        public int ecall_bigint_add(
+            [in, size=a_size] const uint8_t* a,
+            size_t a_size,
+            [in, size=b_size] const uint8_t* b,
+            size_t b_size,
+            [out, size=result_size] uint8_t* result,
+            [in, out] size_t* result_size
+        );
+        
+        public int ecall_bigint_multiply(
+            [in, size=a_size] const uint8_t* a,
+            size_t a_size,
+            [in, size=b_size] const uint8_t* b,
+            size_t b_size,
+            [out, size=result_size] uint8_t* result,
+            [in, out] size_t* result_size
+        );
+        
+        public int ecall_bigint_modexp(
+            [in, size=base_size] const uint8_t* base,
+            size_t base_size,
+            [in, size=exp_size] const uint8_t* exponent,
+            size_t exp_size,
+            [in, size=mod_size] const uint8_t* modulus,
+            size_t mod_size,
+            [out, size=result_size] uint8_t* result,
+            [in, out] size_t* result_size
+        );
+          // Auxiliary aggregation summary
+        public int ecall_get_auxiliary_aggregation_summary(
+            [out] aggregation_result_t* summary
+        );
+        
+        public int ecall_get_auxiliary_count(
+            [out] uint32_t* count
+        );
+        
+        // Attestation (when not in simulation mode)
+        public int ecall_generate_auxiliary_attestation_report(
+            [in, size=nonce_size] const uint8_t* nonce,
+            size_t nonce_size,
+            [out, size=report_size] uint8_t* report,
+            [in, out] size_t* report_size
+        );
+        
+        // State management
+        public int ecall_get_auxiliary_collector_state(
+            [out] collector_state_t* state
+        );
+        
+        public int ecall_reset_auxiliary_collector(void);
+    };
+      untrusted {
+        // Network operations for auxiliary data (for collecting from API)
+        int ocall_auxiliary_network_send(
+            [in, string] const char* host,
+            int port,
+            [in, size=data_size] const uint8_t* data,
+            size_t data_size,
+            [out, size=response_size] uint8_t* response,
+            [in, out] size_t* response_size
+        );
+        
+        int ocall_auxiliary_network_receive(
+            int port,
+            [out, size=buffer_size] uint8_t* buffer,
+            [in, out] size_t* buffer_size,
+            int timeout_ms
+        );
+        
+        // Logging for auxiliary operations
+        void ocall_auxiliary_log_message(
+            int level,
+            [in, string] const char* message
+        );
+        
+        void ocall_auxiliary_log_error(
+            int error_code,
+            [in, string] const char* context
+        );
+        
+        // System operations
+        uint64_t ocall_get_timestamp(void);
+        
+        int ocall_get_random_bytes(
+            [out, size=size] uint8_t* buffer,
+            size_t size
+        );
+        
+        void* ocall_allocate_memory(size_t size);
+          void ocall_free_memory([user_check] void* ptr);
+    };
+};

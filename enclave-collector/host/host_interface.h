@@ -1,8 +1,8 @@
 #ifndef HOST_INTERFACE_H
 #define HOST_INTERFACE_H
-
 #include <stdint.h>
 #include <stddef.h>
+#include <time.h>
 #include "shared_types.h"
 #include "error_codes.h"
 
@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-// Host configuration structure
+// Host configuration structure for auxiliary aggregation
 typedef struct {
     int port;
     int log_level;
@@ -21,82 +21,78 @@ typedef struct {
     char log_file[256];
     char enclave_path[256];
     char attestation_url[512];
+    char backend_url[512];
+    int polling_interval;
+    int timeout_seconds;
 } host_config_t;
 
-// Host context structure
+// Host context structure for auxiliary operations
 typedef struct {
     host_config_t config;
     void* enclave_handle;
-    collector_state_t collector_state;
+    auxiliary_state_t aux_state;
     uint64_t session_id;
     int is_initialized;
     void* network_context;
     void* thread_pool;
-    char current_election_id[128];  // Current election being processed
-    void* math_context;             // Pointer to math_context_t (opaque to avoid header deps)
-    void* api_config;               // Pointer to api_config_t
+    char current_collector_id[128];
+    void* math_context;
+    void* api_config;
 } host_context_t;
 
-// Request structure for processing
+// Host auxiliary state tracking
+typedef struct {
+    bool initialized;
+    size_t processed_count;
+    time_t session_start;
+    time_t last_aggregation;
+} host_auxiliary_state_t;
+
+// Auxiliary request types
+typedef enum {
+    AUX_REQ_AGGREGATE = 1,
+    AUX_REQ_STATUS = 2
+} auxiliary_request_type_t;
+
+// Auxiliary request structure
 typedef struct {
     uint32_t request_id;
-    uint32_t message_type;
-    uint8_t* payload;
-    size_t payload_size;
-    void* client_context;
+    auxiliary_request_type_t type;
+    auxiliary_value_t* aux_values;
+    size_t count;
     uint64_t timestamp;
-} host_request_t;
+} auxiliary_request_t;
 
-// Response structure
+// Auxiliary response structure
 typedef struct {
     uint32_t request_id;
-    int result_code;
-    uint8_t* response_data;
-    size_t response_size;
-} host_response_t;
+    enclave_result_t result;
+    char result_data[512];
+    size_t data_size;
+    uint64_t timestamp;
+} auxiliary_response_t;
 
-// Host interface functions
-// Enclave management
-int host_create_enclave(host_context_t* context);
-int host_destroy_enclave(host_context_t* context);
-int host_initialize_enclave(host_context_t* context);
-
-// Request processing
-int host_process_request(host_context_t* context, const host_request_t* request, host_response_t* response);
-int host_process_pending_requests(host_context_t* context);
-int host_handle_vote_submission(host_context_t* context, const vote_t* vote, uint32_t* vote_id);
-int host_handle_aggregation_request(host_context_t* context, aggregation_summary_t* summary);
-int host_handle_status_request(host_context_t* context, collector_state_t* state);
-
-// Utility functions
-int host_validate_request(const host_request_t* request);
-int host_perform_maintenance(host_context_t* context);
-uint64_t get_timestamp_ms(void);
-int hex_to_binary(const char* hex_str, uint8_t** out_binary, size_t* out_length);
-
-// New enclave_result_t API functions for integration tests
+// Core host interface functions for auxiliary aggregation
 enclave_result_t host_initialize(host_context_t* context);
 enclave_result_t host_cleanup(host_context_t* context);
-enclave_result_t host_get_enclave_info(enclave_info_t* info);
-enclave_result_t host_generate_keypair(crypto_key_t* public_key, crypto_key_t* private_key);
-enclave_result_t host_process_vote_request(const vote_t* vote, vote_receipt_t* receipt);
-enclave_result_t host_get_vote_aggregation(vote_aggregation_t* aggregation);
 
-// Additional integration test functions
-enclave_result_t host_process_vote(const vote_t* vote, vote_receipt_t* receipt);
-enclave_result_t host_aggregate_votes(vote_aggregation_t* aggregation);
+// Auxiliary processing functions
+enclave_result_t host_process_auxiliary_request(host_context_t* context, 
+                                              const auxiliary_request_t* request,
+                                              auxiliary_response_t* response);
+enclave_result_t host_handle_auxiliary_aggregation(host_context_t* context,
+                                                 const auxiliary_value_t* aux_values,
+                                                 size_t count,
+                                                 char* result_buffer);
+enclave_result_t host_get_auxiliary_status(host_context_t* context, char* status_buffer);
 
-// Simulation mode functions
-#ifdef SIMULATION_MODE
-int sim_initialize_collector(collector_state_t* state);
-int sim_process_vote(const vote_t* vote, uint32_t* vote_id);
-int sim_aggregate_votes(aggregation_summary_t* summary);
-int sim_generate_keys(key_pair_t* keys);
-int sim_encrypt_data(const uint8_t* plaintext, size_t data_size, encrypted_data_t* encrypted);
-int sim_decrypt_data(const encrypted_data_t* encrypted, uint8_t* plaintext, size_t* buffer_size);
-int sim_sign_data(const uint8_t* data, size_t data_size, uint8_t* signature, size_t* sig_size);
-int sim_verify_signature(const uint8_t* data, size_t data_size, const uint8_t* signature, size_t sig_size, const uint8_t* public_key, size_t key_size, int* is_valid);
-#endif
+// Configuration functions
+enclave_result_t host_get_config(host_context_t* context, host_config_t* config);
+enclave_result_t host_set_config(host_context_t* context, const host_config_t* config);
+
+// Utility functions
+uint64_t get_timestamp_ms(void);
+int hex_to_binary(const char* hex_str, uint8_t** out_binary, size_t* out_length);
 
 #ifdef __cplusplus
 }

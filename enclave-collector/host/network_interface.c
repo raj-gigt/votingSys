@@ -2,28 +2,28 @@
 #include "host_interface.h"
 #include "logging.h"
 #include "error_codes.h"
+#include "api_client.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
 
+// Add needed socket headers
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
-    #pragma comment(lib, "ws2_32.lib")
-    #define close closesocket
-    #define SOCKET_ERROR_CODE WSAGetLastError()
 #else
     #include <sys/socket.h>
     #include <netinet/in.h>
     #include <arpa/inet.h>
     #include <unistd.h>
-    #include <pthread.h>
-    #define SOCKET int
-    #define INVALID_SOCKET -1
-    #define SOCKET_ERROR -1
-    #define SOCKET_ERROR_CODE errno
 #endif
+
+#define SOCKET int
+#define INVALID_SOCKET -1
+#define SOCKET_ERROR -1
+#define SOCKET_ERROR_CODE errno
 
 // Global server instance for thread communication
 static network_server_t* g_server_instance = NULL;
@@ -43,16 +43,6 @@ enclave_result_t network_initialize(const network_config_t* config, network_serv
     memcpy(&server->config, config, sizeof(network_config_t));
     server->server_socket = INVALID_SOCKET;
     server->is_running = false;
-
-#ifdef _WIN32
-    // Initialize Winsock
-    WSADATA wsaData;
-    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (result != 0) {
-        log_error("WSAStartup failed: %d", result);
-        return ENCLAVE_ERROR_NETWORK_INIT;
-    }
-#endif
 
     log_info("Network subsystem initialized");
     return ENCLAVE_SUCCESS;
@@ -99,28 +89,16 @@ enclave_result_t network_start_server(network_server_t* server) {
         log_error("Failed to listen on socket: %d", SOCKET_ERROR_CODE);
         close(server->server_socket);
         return ENCLAVE_ERROR_NETWORK_LISTEN;
-    }
-
-    // Start server thread
+    }    // Start server thread
     server->is_running = true;
     g_server_instance = server;
 
-#ifdef _WIN32
-    server->server_thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)server_thread_func, server, 0, NULL);
-    if (server->server_thread == NULL) {
-        log_error("Failed to create server thread");
-        server->is_running = false;
-        close(server->server_socket);
-        return ENCLAVE_ERROR_THREAD_CREATE;
-    }
-#else
     if (pthread_create(&server->server_thread, NULL, server_thread_func, server) != 0) {
         log_error("Failed to create server thread");
         server->is_running = false;
         close(server->server_socket);
         return ENCLAVE_ERROR_THREAD_CREATE;
     }
-#endif
 
     log_info("Network server started on %s:%d", server->config.host, server->config.port);
     return ENCLAVE_SUCCESS;
@@ -142,21 +120,11 @@ enclave_result_t network_stop_server(network_server_t* server) {
     if (server->server_socket != INVALID_SOCKET) {
         close(server->server_socket);
         server->server_socket = INVALID_SOCKET;
-    }
-
-    // Wait for server thread to finish
-#ifdef _WIN32
-    if (server->server_thread != NULL) {
-        WaitForSingleObject(server->server_thread, 5000); // 5 second timeout
-        CloseHandle(server->server_thread);
-        server->server_thread = NULL;
-    }
-#else
+    }    // Wait for server thread to finish
     if (server->server_thread != 0) {
         pthread_join(server->server_thread, NULL);
         server->server_thread = 0;
     }
-#endif
 
     log_info("Network server stopped");
     return ENCLAVE_SUCCESS;
@@ -169,10 +137,6 @@ enclave_result_t network_cleanup(network_server_t* server) {
     }
 
     network_stop_server(server);
-
-#ifdef _WIN32
-    WSACleanup();
-#endif
 
     log_info("Network subsystem cleaned up");
     return ENCLAVE_SUCCESS;
@@ -267,22 +231,21 @@ static enclave_result_t handle_client_connection(int client_socket) {
 static enclave_result_t route_http_request(const http_request_t* request, http_response_t* response) {
     if (!request || !response) {
         return ENCLAVE_ERROR_INVALID_PARAMETER;
-    }
+    }    log_debug("Routing %s %s", request->method, request->path);
 
-    log_debug("Routing %s %s", request->method, request->path);
-
-    if (strcmp(request->path, "/health") == 0) {
+    // Only handle the 3 essential collector endpoints
+    if (strcmp(request->path, "/params") == 0 && strcmp(request->method, "GET") == 0) {
+        return handle_system_params(request, response);
+    } else if (strcmp(request->path, "/fetch-auxiliary") == 0 && strcmp(request->method, "GET") == 0) {
+        return handle_fetch_auxiliary(request, response);
+    } else if (strcmp(request->path, "/aux") == 0 && strcmp(request->method, "POST") == 0) {
+        return handle_auxiliary_submission(request, response);
+    } else if (strcmp(request->path, "/health") == 0) {
         return handle_health_check(request, response);
-    } else if (strcmp(request->path, "/vote") == 0 && strcmp(request->method, "POST") == 0) {
-        return handle_vote_submission(request, response);
-    } else if (strcmp(request->path, "/aggregation") == 0 && strcmp(request->method, "GET") == 0) {
-        return handle_vote_aggregation(request, response);
-    } else if (strcmp(request->path, "/info") == 0 && strcmp(request->method, "GET") == 0) {
-        return handle_enclave_info(request, response);
     } else {
         // 404 Not Found
         response->status_code = 404;
-        response->body = strdup("Not Found");
+        response->body = strdup("Endpoint not supported - Collector supports only: GET /params, GET /fetch-auxiliary, POST /aux");
         response->body_length = strlen(response->body);
         return ENCLAVE_SUCCESS;
     }

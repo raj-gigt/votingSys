@@ -19,15 +19,17 @@ enclave_result_t ecall_get_enclave_info(enclave_info_t* info) {
     return get_enclave_info(info);
 }
 
-// ECALL: Process vote
-enclave_result_t ecall_process_vote(const vote_t* vote, vote_receipt_t* receipt) {
-    printf("[ENCLAVE SIM] Processing vote ID: ");
-    for (int i = 0; i < 8 && i < VOTE_ID_SIZE; i++) {
-        printf("%02x", vote->vote_id[i]);
-    }
-    printf("...\n");
-    
-    return process_vote(vote, receipt);
+// ECALL: Process auxiliary values
+enclave_result_t ecall_process_auxiliary_values(const auxiliary_value_t* values, size_t count, 
+                                               auxiliary_product_t* product) {
+    printf("[ENCLAVE SIM] Processing %zu auxiliary values...\n", count);
+    return process_auxiliary_values(values, count, product);
+}
+
+// ECALL: Validate auxiliary value
+enclave_result_t ecall_validate_auxiliary_value(const auxiliary_value_t* value) {
+    printf("[ENCLAVE SIM] Validating auxiliary value...\n");
+    return validate_auxiliary_value(value);
 }
 
 // ECALL: Generate keypair
@@ -51,24 +53,11 @@ enclave_result_t ecall_verify_signature(const uint8_t* data, size_t data_len,
     return verify_signature(data, data_len, signature, public_key);
 }
 
-// ECALL: Aggregate votes
-enclave_result_t ecall_aggregate_votes(vote_aggregation_t* aggregation) {
-    printf("[ENCLAVE SIM] Aggregating votes...\n");
-    return aggregate_votes(aggregation);
-}
-
-// ECALL: Seal data
-enclave_result_t ecall_seal_data(const uint8_t* data, size_t data_len, 
-                                uint8_t** sealed_data, size_t* sealed_len) {
-    printf("[ENCLAVE SIM] Sealing data (%zu bytes)...\n", data_len);
-    return seal_data(data, data_len, sealed_data, sealed_len);
-}
-
-// ECALL: Unseal data
-enclave_result_t ecall_unseal_data(const uint8_t* sealed_data, size_t sealed_len,
-                                  uint8_t** data, size_t* data_len) {
-    printf("[ENCLAVE SIM] Unsealing data (%zu bytes)...\n", sealed_len);
-    return unseal_data(sealed_data, sealed_len, data, data_len);
+// ECALL: Aggregate auxiliary values
+enclave_result_t ecall_aggregate_auxiliary_values(const api_auxiliary_value_t* values, size_t count,
+                                                 char* result_buffer, size_t buffer_size) {
+    printf("[ENCLAVE SIM] Aggregating %zu auxiliary values...\n", count);
+    return aggregate_auxiliary_values(values, count, result_buffer, buffer_size);
 }
 
 // ECALL: Cleanup enclave

@@ -56,10 +56,10 @@ enclave_result_t network_start_server(network_server_t* server);
 enclave_result_t network_stop_server(network_server_t* server);
 enclave_result_t network_cleanup(network_server_t* server);
 
-// HTTP handlers
-enclave_result_t handle_vote_submission(const http_request_t* request, http_response_t* response);
-enclave_result_t handle_vote_aggregation(const http_request_t* request, http_response_t* response);
-enclave_result_t handle_enclave_info(const http_request_t* request, http_response_t* response);
+// HTTP handlers for auxiliary aggregation
+enclave_result_t handle_system_params(const http_request_t* request, http_response_t* response);
+enclave_result_t handle_fetch_auxiliary(const http_request_t* request, http_response_t* response);
+enclave_result_t handle_auxiliary_submission(const http_request_t* request, http_response_t* response);
 enclave_result_t handle_health_check(const http_request_t* request, http_response_t* response);
 
 // Utility functions

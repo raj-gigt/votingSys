@@ -80,9 +80,10 @@ async function initializeSystemParams() {
 }
 
 // Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
-  console.log(`Server is running on port ${PORT}`);
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces
+app.listen(PORT, HOST, async () => {
+  console.log(`Server is running on ${HOST}:${PORT}`);
 
   // Initialize system parameters on server start
   await initializeSystemParams();

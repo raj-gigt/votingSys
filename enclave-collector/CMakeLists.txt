@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(EnclaveCollector VERSION 1.0.0 LANGUAGES C CXX)
+project(AuxiliaryCollector VERSION 1.0.0 LANGUAGES C CXX)
 
 # Set C/C++ standards
 set(CMAKE_C_STANDARD 11)
@@ -93,10 +93,10 @@ if(ENABLE_ATTESTATION AND NOT SIMULATION_MODE)
 endif()
 
 # Print configuration summary
-message(STATUS "=== Enclave Collector Configuration ===")
+message(STATUS "=== Auxiliary Collector Configuration ===")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Simulation mode: ${SIMULATION_MODE}")
 message(STATUS "Enable logging: ${ENABLE_LOGGING}")
 message(STATUS "Enable attestation: ${ENABLE_ATTESTATION}")
 message(STATUS "Dependencies found: ${DEPS_DIR}")
-message(STATUS "========================================")
+message(STATUS "===========================================")

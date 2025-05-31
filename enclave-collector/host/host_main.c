@@ -3,25 +3,20 @@
 #include <string.h>
 #include <signal.h>
 
-#include "host_interface.h"
+#include "api_client.h"
 #include "logging.h"
-#include "network_interface.h"
-#include "file_operations.h"
 #include "shared_types.h"
 #include "error_codes.h"
-#include "constants.h"
+#include "secure_crypto_interface.h"
 
 #ifdef _WIN32
 #include <windows.h>
-#include <winsock2.h>
 #else
 #include <unistd.h>
-#include <pthread.h>
 #endif
 
 // Global state
 static int g_running = 1;
-static host_context_t g_host_context = {0};
 
 // Signal handler for graceful shutdown
 void signal_handler(int signal) {
@@ -32,258 +27,225 @@ void signal_handler(int signal) {
 // Print usage information
 void print_usage(const char* program_name) {
     printf("Usage: %s [options]\n", program_name);
+    printf("Collector Host - Auxiliary Aggregation Only\n");
     printf("Options:\n");
-    printf("  -p, --port <port>       Set listening port (default: %d)\n", DEFAULT_PORT);
-    printf("  -c, --config <file>     Configuration file path\n");
+    printf("  -u, --url <url>         Set API base URL (default: http://localhost:3000)\n");
     printf("  -l, --log-level <level> Set log level (0-4)\n");
-    printf("  -s, --simulation        Run in simulation mode\n");
     printf("  -h, --help              Show this help message\n");
     printf("  -v, --version           Show version information\n");
 }
 
 // Parse command line arguments
-int parse_arguments(int argc, char* argv[], host_config_t* config) {
+int parse_arguments(int argc, char* argv[], api_config_t* config) {
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--port") == 0) {
+        if (strcmp(argv[i], "-u") == 0 || strcmp(argv[i], "--url") == 0) {
             if (i + 1 < argc) {
-                config->port = atoi(argv[++i]);
-                if (config->port <= 0 || config->port > 65535) {
-                    fprintf(stderr, "Invalid port number: %d\n", config->port);
-                    return ERROR_INVALID_PARAMETER;
-                }
+                strncpy(config->base_url, argv[++i], sizeof(config->base_url) - 1);
             } else {
-                fprintf(stderr, "Port option requires a value\n");
-                return ERROR_INVALID_PARAMETER;
-            }
-        } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--config") == 0) {
-            if (i + 1 < argc) {
-                strncpy(config->config_file, argv[++i], sizeof(config->config_file) - 1);
-            } else {
-                fprintf(stderr, "Config option requires a file path\n");
-                return ERROR_INVALID_PARAMETER;
+                fprintf(stderr, "URL option requires a value\n");
+                return -1;
             }
         } else if (strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--log-level") == 0) {
             if (i + 1 < argc) {
-                config->log_level = atoi(argv[++i]);
-                if (config->log_level < 0 || config->log_level > 4) {
-                    fprintf(stderr, "Invalid log level: %d\n", config->log_level);
-                    return ERROR_INVALID_PARAMETER;
+                int log_level = atoi(argv[++i]);
+                if (log_level < 0 || log_level > 4) {
+                    fprintf(stderr, "Invalid log level: %d\n", log_level);
+                    return -1;
                 }
+                // Set log level (assuming logging supports this)
             } else {
                 fprintf(stderr, "Log level option requires a value\n");
-                return ERROR_INVALID_PARAMETER;
+                return -1;
             }
-        } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--simulation") == 0) {
-            config->simulation_mode = 1;
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
             return 1; // Not an error, just exit
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
-            printf("Enclave Collector Host v1.0.0\n");
+            printf("Enclave Collector Host v1.0.0 - Auxiliary Aggregation\n");
             return 1; // Not an error, just exit
         } else {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
             print_usage(argv[0]);
-            return ERROR_INVALID_PARAMETER;
+            return -1;
         }
     }
-    return SUCCESS;
+    return 0;
 }
 
-// Initialize host configuration with defaults
-void init_default_config(host_config_t* config) {
-    memset(config, 0, sizeof(host_config_t));
-    config->port = DEFAULT_PORT;
-    config->log_level = 2; // INFO level
-    config->max_connections = MAX_CONNECTIONS;
-    config->network_timeout = NETWORK_TIMEOUT_MS;
-    config->simulation_mode = 1; // Default to simulation mode
-    strcpy(config->config_file, "config/enclave.conf");
-    strcpy(config->log_file, "logs/collector.log");
+// Initialize API configuration with defaults
+void init_default_config(api_config_t* config) {
+    memset(config, 0, sizeof(api_config_t));
+    strcpy(config->base_url, "http://localhost:3000");
+    config->timeout_ms = 30000; // 30 seconds
+    config->max_retries = 3;
 }
 
-// Load configuration from file
-int load_config_file(const char* filename, host_config_t* config) {
-    FILE* file = fopen(filename, "r");
-    if (!file) {
-        log_warning("Config file not found: %s, using defaults", filename);
-        return SUCCESS; // Not an error, use defaults
-    }
-
-    char line[512];
-    char key[128], value[256];
+// Main auxiliary aggregation function
+int run_auxiliary_aggregation(void) {
+    log_info("Starting auxiliary aggregation process...");
     
-    while (fgets(line, sizeof(line), file)) {
-        // Skip comments and empty lines
-        if (line[0] == '#' || line[0] == '\n' || line[0] == '\r') {
-            continue;
-        }
-        
-        if (sscanf(line, "%127[^=]=%255s", key, value) == 2) {
-            // Trim whitespace
-            char* key_trim = key;
-            while (*key_trim == ' ' || *key_trim == '\t') key_trim++;
-            char* key_end = key_trim + strlen(key_trim) - 1;
-            while (key_end > key_trim && (*key_end == ' ' || *key_end == '\t' || *key_end == '\n' || *key_end == '\r')) {
-                *key_end-- = '\0';
-            }
-            
-            if (strcmp(key_trim, "port") == 0) {
-                config->port = atoi(value);
-            } else if (strcmp(key_trim, "log_level") == 0) {
-                config->log_level = atoi(value);
-            } else if (strcmp(key_trim, "max_connections") == 0) {
-                config->max_connections = atoi(value);
-            } else if (strcmp(key_trim, "simulation_mode") == 0) {
-                config->simulation_mode = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
-            } else if (strcmp(key_trim, "log_file") == 0) {
-                strncpy(config->log_file, value, sizeof(config->log_file) - 1);
-            }
-        }
+    // 1. Initialize by fetching system parameters from API
+    crypto_params_t crypto_params;
+    enclave_result_t result = api_fetch_system_params(&crypto_params);
+    if (result != ENCLAVE_SUCCESS) {
+        log_error("Failed to fetch system parameters: %d", result);
+        return -1;
     }
     
-    fclose(file);
-    return SUCCESS;
-}
-
-// Main application loop
-int run_collector_service(host_context_t* context) {
-    log_info("Starting collector service on port %d", context->config.port);
-
-    // Initialize network server
-    network_config_t net_config;
-    strncpy(net_config.host, "0.0.0.0", sizeof(net_config.host) - 1);
-    net_config.host[sizeof(net_config.host) - 1] = '\0';
-    net_config.port = context->config.port;
-    net_config.max_connections = context->config.max_connections;
-    net_config.timeout_seconds = 30;
-    net_config.enable_ssl = false;
-
-    network_server_t server;
-    enclave_result_t result = network_initialize(&net_config, &server);
-    if (result != ENCLAVE_SUCCESS) {
-        log_error("Failed to initialize network: %s", get_error_description(result));
-        return result;
-    }
-
-    // Start network server
-    result = network_start_server(&server);
-    if (result != ENCLAVE_SUCCESS) {
-        log_error("Failed to start network server: %s", get_error_description(result));
-        network_cleanup(&server);
-        return result;
-    }    log_info("Collector service is running. Press Ctrl+C to stop.");
-
-    // Main service loop - Now actually doing meaningful work!
-    while (g_running) {
-        // Process any pending client requests from the network
-        int process_result = host_process_pending_requests(context);
-        if (process_result != SUCCESS && process_result != ERROR_NO_DATA) {
-            log_warning("Failed to process pending requests: %s", get_error_description(process_result));
-        }
-        
-        // Perform periodic maintenance tasks
-        host_perform_maintenance(context);
-        
-        // Check collector status and perform cryptographic operations
-        // This implements the mathematical protocol: aux = ∏(i=1 to n) aux_i = H()^(sk_A * Σ(i=1 to n) sk_i)
-        collector_state_t current_state;
-        if (host_handle_status_request(context, &current_state) == SUCCESS) {
-            if (current_state.total_votes > 0 && !current_state.is_sealed) {
-                log_info("Collector active with %d total votes (%d valid, %d invalid)", 
-                        current_state.total_votes, current_state.valid_votes, current_state.invalid_votes);
-                
-                // If we have accumulated enough auxiliary values, trigger aggregation
-                if (current_state.total_votes >= 10) { // Configurable threshold
-                    aggregation_summary_t summary;
-                    if (host_handle_aggregation_request(context, &summary) == SUCCESS) {
-                        log_info("Aggregation completed successfully. Posting to backend...");
-                        // TODO: Post aggregated result to backend via API
-                    }
-                }
-            }
-        }
-        
-        // Sleep for a short period to avoid busy waiting
-#ifdef _WIN32
-        Sleep(100); // Sleep 100ms - much more responsive now
-#else
-        usleep(100000); // 100ms
-#endif
-    }
-
-    log_info("Stopping collector service...");
-
-    // Stop and cleanup network server
-    result = network_stop_server(&server);
-    if (result != ENCLAVE_SUCCESS) {
-        log_warning("Failed to stop network server properly: %s", get_error_description(result));
-    }
-
-    network_cleanup(&server);
+    log_info("System parameters fetched successfully");
     
-    return SUCCESS;
+    // 2. Fetch auxiliary values
+    api_auxiliary_value_t* aux_values = NULL;
+    size_t count = 0;
+    
+    result = api_fetch_auxiliary_values(&aux_values, &count);
+    if (result != ENCLAVE_SUCCESS) {
+        log_error("Failed to fetch auxiliary values: %d", result);
+        return -1;
+    }
+    
+    if (count == 0) {
+        log_info("No auxiliary values to aggregate");
+        return 0;
+    }
+      log_info("Fetched %zu auxiliary values for aggregation", count);
+    
+    // 3. Initialize secure crypto processor with system parameters
+    result = secure_crypto_init(crypto_params.election_id, 
+                               crypto_params.N, 
+                               crypto_params.H, 
+                               crypto_params.skA);
+    if (result != ENCLAVE_SUCCESS) {
+        log_error("Failed to initialize secure crypto processor: %d", result);
+        api_free_auxiliary_values(aux_values, count);
+        return -1;
+    }
+    
+    // 4. Convert auxiliary values to format expected by enclave
+    const char** aux_hex_values = malloc(count * sizeof(char*));
+    const char** voter_ids = malloc(count * sizeof(char*));
+    uint64_t* timestamps = malloc(count * sizeof(uint64_t));
+    
+    if (!aux_hex_values || !voter_ids || !timestamps) {
+        log_error("Failed to allocate memory for auxiliary value arrays");
+        free(aux_hex_values);
+        free(voter_ids);
+        free(timestamps);
+        api_free_auxiliary_values(aux_values, count);
+        secure_crypto_cleanup();
+        return -1;
+    }
+    
+    // Prepare data for batch processing
+    for (size_t i = 0; i < count; i++) {
+        aux_hex_values[i] = aux_values[i].aux_value;
+        voter_ids[i] = aux_values[i].voter_id;
+        timestamps[i] = time(NULL); // Use current timestamp if not available
+    }
+    
+    // 5. Process auxiliary values through secure enclave
+    int processed_count = 0;
+    result = secure_process_auxiliary_values_batch(aux_hex_values, voter_ids, 
+                                                  timestamps, count, &processed_count);
+    if (result != ENCLAVE_SUCCESS) {
+        log_error("Failed to process auxiliary values in enclave: %d", result);
+        free(aux_hex_values);
+        free(voter_ids);
+        free(timestamps);
+        api_free_auxiliary_values(aux_values, count);
+        secure_crypto_cleanup();
+        return -1;
+    }
+    
+    log_info("Successfully processed %d out of %zu auxiliary values", processed_count, count);
+    
+    // 6. Compute final aggregated result using secure enclave
+    char aggregated_result[8192];
+    size_t result_size = sizeof(aggregated_result);
+    uint8_t zk_proof[2048];
+    size_t proof_size = sizeof(zk_proof);
+    
+    result = secure_compute_final_aggregation(aggregated_result, &result_size, 
+                                            zk_proof, &proof_size);
+    if (result != ENCLAVE_SUCCESS) {
+        log_error("Failed to compute final aggregation: %d", result);
+        free(aux_hex_values);
+        free(voter_ids);
+        free(timestamps);
+        api_free_auxiliary_values(aux_values, count);
+        secure_crypto_cleanup();
+        return -1;
+    }
+    
+    log_info("Secure aggregation completed. Result size: %zu bytes, Proof size: %zu bytes", 
+             result_size, proof_size);
+    
+    // Clean up temporary arrays
+    free(aux_hex_values);
+    free(voter_ids);
+    free(timestamps);// 4. Submit aggregated result
+    result = api_submit_aux_product(aggregated_result);
+    if (result != ENCLAVE_SUCCESS) {
+        log_error("Failed to submit auxiliary product: %d", result);
+        api_free_auxiliary_values(aux_values, count);
+        return -1;
+    }
+      log_info("Successfully completed auxiliary aggregation");
+    
+    // Cleanup secure crypto processor
+    secure_crypto_cleanup();
+    
+    // Cleanup
+    api_free_auxiliary_values(aux_values, count);
+    return 0;
 }
 
 int main(int argc, char* argv[]) {
-    int result = SUCCESS;
+    int result = 0;
     
-    printf("Enclave Collector Host Starting...\n");
+    printf("Enclave Collector Host - Auxiliary Aggregation v1.0.0\n");
     
     // Set up signal handlers
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     
-    // Initialize default configuration
-    init_default_config(&g_host_context.config);
+    // Initialize API configuration
+    api_config_t api_config;
+    init_default_config(&api_config);
     
     // Parse command line arguments
-    result = parse_arguments(argc, argv, &g_host_context.config);
-    if (result != SUCCESS) {
-        if (result == 1) return 0; // Help or version printed
-        return result;
+    result = parse_arguments(argc, argv, &api_config);
+    if (result != 0) {
+        if (result == 1) return 0; // Help or version printed        return result;
     }
     
-    // Load configuration file
-    result = load_config_file(g_host_context.config.config_file, &g_host_context.config);
-    if (result != SUCCESS) {
-        fprintf(stderr, "Failed to load configuration: %s\n", get_error_description(result));
-        return result;
-    }
+    // Initialize logging with default config
+    host_config_t log_config = {0};
+    log_config.log_level = LOG_LEVEL_INFO;  // Default to INFO level
+    strcpy(log_config.log_file, "logs/auxiliary_collector.log");  // Default log file
     
-    // Initialize logging
-    result = logging_init(&g_host_context.config);
-    if (result != SUCCESS) {
-        fprintf(stderr, "Failed to initialize logging: %s\n", get_error_description(result));
-        return result;
-    }
+    logging_init(&log_config);
     
-    log_info("=== Enclave Collector Host v1.0.0 ===");
+    log_info("=== Enclave Collector Host - Auxiliary Aggregation ===");
     log_info("Configuration:");
-    log_info("  Port: %d", g_host_context.config.port);
-    log_info("  Log Level: %d", g_host_context.config.log_level);
-    log_info("  Simulation Mode: %s", g_host_context.config.simulation_mode ? "Yes" : "No");
-    log_info("  Max Connections: %d", g_host_context.config.max_connections);
+    log_info("  API Base URL: %s", api_config.base_url);
+    log_info("  Timeout: %d ms", api_config.timeout_ms);
+    log_info("  Max Retries: %d", api_config.max_retries);
     
-    // Initialize host interface
-    result = host_initialize(&g_host_context);
-    if (result != SUCCESS) {
-        log_error("Failed to initialize host interface: %s", get_error_description(result));
-        goto cleanup;
-    }
+    // Initialize API client
+    enclave_result_t init_result = api_client_init(&api_config);
+    if (init_result != ENCLAVE_SUCCESS) {
+        log_error("Failed to initialize API client: %d", init_result);
+        return -1;
+    }    // Initialize auxiliary management (simplified - no complex state management needed)
+    log_info("Auxiliary management initialized (simplified mode)");
     
-    // Run the collector service
-    result = run_collector_service(&g_host_context);
-    
-cleanup:
-    log_info("Shutting down collector host...");
-    
-    // Cleanup host interface
-    host_cleanup(&g_host_context);
-    
-    // Cleanup logging
+    // Run auxiliary aggregation
+    result = run_auxiliary_aggregation();    // Cleanup
+    log_info("Shutting down auxiliary collector host...");
+    api_client_cleanup();
     logging_cleanup();
     
-    printf("Enclave Collector Host Stopped.\n");
+    printf("Enclave Collector Host Stopped. Exit code: %d\n", result);
     return result;
 }
